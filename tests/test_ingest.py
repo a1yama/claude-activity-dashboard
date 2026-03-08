@@ -69,10 +69,10 @@ class TestParseMessageContent:
         result = parse_message_content(None)
         assert result == ""
 
-    def test_truncation(self):
+    def test_long_text_preserved(self):
         long_text = "x" * 1000
         result = parse_message_content(long_text)
-        assert len(result) == 500
+        assert len(result) == 1000
 
 
 class TestCountToolUses:
@@ -105,7 +105,7 @@ class TestExtractToolNames:
             {"type": "text", "text": "result"},
             {"type": "tool_use", "name": "Read"},
         ]
-        assert extract_tool_names(content) == "Bash,Read"
+        assert extract_tool_names(content) == '["Bash", "Read"]'
 
     def test_no_tools(self):
         assert extract_tool_names([{"type": "text", "text": "Hi"}]) == ""

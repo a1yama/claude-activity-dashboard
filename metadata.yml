@@ -49,7 +49,7 @@ databases:
         sql: |
           WITH tool_split AS (
             SELECT value AS tool_name
-            FROM messages, json_each('["' || REPLACE(tool_names, ',', '","') || '"]')
+            FROM messages, json_each(tool_names)
             WHERE tool_names != ''
           )
           SELECT tool_name, COUNT(*) AS usage_count
@@ -58,6 +58,37 @@ databases:
           GROUP BY tool_name
           ORDER BY usage_count DESC
           LIMIT 30
+      session-detail:
+        title: セッション詳細
+        sql: |
+          SELECT
+            session_id,
+            project_name,
+            first_message_at,
+            last_message_at,
+            message_count,
+            user_message_count,
+            assistant_message_count,
+            tool_use_count,
+            claude_version
+          FROM sessions
+          WHERE session_id = :session_id
+      session-messages:
+        title: セッションメッセージ一覧
+        sql: |
+          SELECT
+            uuid,
+            type,
+            subtype,
+            timestamp_jst,
+            content_preview,
+            tool_count,
+            tool_names,
+            tool_details,
+            is_meta
+          FROM messages
+          WHERE session_id = :session_id
+          ORDER BY timestamp_jst ASC
       recent-sessions:
         title: 最近のセッション
         sql: |

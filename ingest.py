@@ -37,12 +37,12 @@ def parse_message_content(content) -> str:
     if isinstance(content, str):
         # Strip XML tags from system/command messages
         clean = re.sub(r"<[^>]+>", "", content).strip()
-        return clean[:500] if clean else ""
+        return clean if clean else ""
     if isinstance(content, list):
         texts = []
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
-                texts.append(block.get("text", "")[:500])
+                texts.append(block.get("text", ""))
         return "\n".join(texts)
     return ""
 
@@ -63,7 +63,34 @@ def extract_tool_names(content) -> str:
         for b in content
         if isinstance(b, dict) and b.get("type") == "tool_use"
     ]
-    return ",".join(names) if names else ""
+    return json.dumps(names) if names else ""
+
+
+TOOL_INPUT_KEYS = {
+    "Read": "file_path",
+    "Edit": "file_path",
+    "Write": "file_path",
+    "Bash": "command",
+    "Grep": "pattern",
+    "Glob": "pattern",
+    "Agent": "prompt",
+}
+
+
+def extract_tool_details(content) -> str:
+    """Extract tool names with key input info from assistant message content."""
+    if not isinstance(content, list):
+        return ""
+    details = []
+    for b in content:
+        if not isinstance(b, dict) or b.get("type") != "tool_use":
+            continue
+        name = b.get("name", "")
+        inp = b.get("input", {})
+        key = TOOL_INPUT_KEYS.get(name)
+        summary = inp.get(key, "")[:200] if key else ""
+        details.append({"name": name, "input": summary})
+    return json.dumps(details) if details else ""
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -95,6 +122,7 @@ def init_db(db_path: Path) -> sqlite3.Connection:
             content_preview TEXT,
             tool_count INTEGER DEFAULT 0,
             tool_names TEXT,
+            tool_details TEXT,
             is_meta INTEGER DEFAULT 0,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id)
         );
@@ -161,6 +189,7 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
             content_preview = ""
             msg_tool_count = 0
             tool_names = ""
+            tool_details = ""
             is_meta = 1 if record.get("isMeta") else 0
 
             if msg_type in ("user", "assistant"):
@@ -170,6 +199,7 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
                 if msg_type == "assistant":
                     msg_tool_count = count_tool_uses(content)
                     tool_names = extract_tool_names(content)
+                    tool_details = extract_tool_details(content)
                     tool_count += msg_tool_count
                     assistant_count += 1
                 elif not is_meta:
@@ -180,7 +210,7 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
             messages.append((
                 uuid, session_id, msg_type, record.get("subtype", ""),
                 timestamp, timestamp_jst, date_jst, hour_jst,
-                content_preview[:500], msg_tool_count, tool_names, is_meta,
+                content_preview, msg_tool_count, tool_names, tool_details, is_meta,
             ))
 
     if not messages:
@@ -203,8 +233,8 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
     conn.executemany("""
         INSERT OR REPLACE INTO messages
         (uuid, session_id, type, subtype, timestamp, timestamp_jst, date_jst, hour_jst,
-         content_preview, tool_count, tool_names, is_meta)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         content_preview, tool_count, tool_names, tool_details, is_meta)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, messages)
 
 

@@ -42,6 +42,10 @@ async def refresh_view(datasette, request):
             msg = f"エラー: {result.stderr.strip()}"
     except subprocess.TimeoutExpired:
         msg = "エラー: タイムアウト（120秒）"
+    except OSError as e:
+        msg = f"エラー: スクリプト実行失敗 - {e}"
+    except Exception as e:
+        msg = f"エラー: 予期しないエラー - {e}"
 
     html = f"""
     <html>

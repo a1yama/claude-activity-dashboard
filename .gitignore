@@ -6,3 +6,5 @@ build/
 .venv/
 data/
 *.db
+node_modules/
+static/
