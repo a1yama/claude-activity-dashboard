@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "paths": {
+      "@playwright/test": ["../frontend/node_modules/@playwright/test"]
+    },
+    "typeRoots": ["../frontend/node_modules/@types"]
+  },
+  "include": ["*.ts", "tests/**/*.ts"]
+}

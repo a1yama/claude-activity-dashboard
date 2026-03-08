@@ -16,7 +16,7 @@ function RefreshButton() {
     setRefreshing(true);
     setMessage('');
     try {
-      const res = await fetch('http://localhost:8765/refresh', { method: 'POST' });
+      const res = await fetch('/api/refresh', { method: 'POST' });
       const text = await res.text();
       let json: { ok?: boolean; message?: string };
       try {

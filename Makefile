@@ -1,4 +1,4 @@
-.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build
+.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test-e2e
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -37,3 +37,8 @@ serve: ingest
 
 serve-only:
 	$(DATASETTE) serve $(DB) --metadata metadata.yml --plugins-dir plugins/ --port 8765 --open
+
+# E2E tests: create fixture DB and run Playwright
+test-e2e:
+	$(PYTHON) e2e/create-fixture-db.py
+	cd frontend && npx playwright test --config ../e2e/playwright.config.ts
