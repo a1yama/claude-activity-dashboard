@@ -2,6 +2,8 @@
 
 Claude Code の活動ログ（`~/.claude/projects/` 内の JSONL）を SQLite に取り込み、ブラウザで閲覧・分析するダッシュボード。
 
+![Dashboard Screenshot](docs/dashboard-screenshot.png)
+
 ## アーキテクチャ
 
 ```
