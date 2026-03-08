@@ -37,32 +37,20 @@ async def refresh_view(datasette, request):
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode == 0:
-            msg = f"更新完了: {result.stdout.strip()}"
+            resp = Response.json({"ok": True, "message": result.stdout.strip()})
         else:
-            msg = f"エラー: {result.stderr.strip()}"
+            resp = Response.json({"ok": False, "message": result.stderr.strip()}, status=500)
     except subprocess.TimeoutExpired:
-        msg = "エラー: タイムアウト（120秒）"
-    except OSError as e:
-        msg = f"エラー: スクリプト実行失敗 - {e}"
+        resp = Response.json({"ok": False, "message": "タイムアウト（120秒）"}, status=500)
     except Exception as e:
-        msg = f"エラー: 予期しないエラー - {e}"
-
-    html = f"""
-    <html>
-    <head><title>Refresh Data</title></head>
-    <body style="font-family: system-ui; max-width: 600px; margin: 40px auto; padding: 0 20px;">
-        <h2>データ更新</h2>
-        <p>{msg}</p>
-        <p><a href="/">← ダッシュボードに戻る</a></p>
-        <p><a href="/-/refresh">もう一度更新する</a></p>
-    </body>
-    </html>
-    """
-    return Response.html(html)
+        resp = Response.json({"ok": False, "message": str(e)}, status=500)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 @hookimpl
 def register_routes():
     return [
         (r"^/-/refresh$", refresh_view),
+        (r"^/refresh$", refresh_view),
     ]

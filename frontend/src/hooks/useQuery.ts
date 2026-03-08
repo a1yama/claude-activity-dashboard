@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 
+const API_PREFIX = import.meta.env.DEV ? '/api' : '';
+
 function buildUrl(queryName: string, params?: Record<string, string>): string {
-  const base = `/api/claude_activity/${queryName}.json?_shape=objects`;
+  const base = `${API_PREFIX}/claude_activity/${queryName}.json?_shape=objects`;
   if (!params) return base;
   const searchParams = new URLSearchParams(params);
   return `${base}&${searchParams.toString()}`;

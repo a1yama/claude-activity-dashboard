@@ -16,15 +16,29 @@ function RefreshButton() {
     setRefreshing(true);
     setMessage('');
     try {
-      const res = await fetch('/api/-/refresh', { method: 'POST' });
-      if (res.ok) {
+      const res = await fetch('http://localhost:8765/refresh', { method: 'POST' });
+      const text = await res.text();
+      let json: { ok?: boolean; message?: string };
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Fallback: non-JSON response (e.g. HTML from old Datasette)
+        if (res.ok && !text.includes('エラー')) {
+          setMessage('更新完了');
+          setTimeout(() => window.location.reload(), 1000);
+          return;
+        }
+        setMessage(`更新エラー (レスポンス: ${text.slice(0, 100)})`);
+        return;
+      }
+      if (json.ok) {
         setMessage('更新完了');
         setTimeout(() => window.location.reload(), 1000);
       } else {
-        setMessage('更新エラー');
+        setMessage(`更新エラー: ${json.message}`);
       }
-    } catch {
-      setMessage('通信エラー');
+    } catch (e) {
+      setMessage(`通信エラー: ${e instanceof Error ? e.message : e}`);
     } finally {
       setRefreshing(false);
     }
