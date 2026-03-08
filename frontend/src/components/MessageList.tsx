@@ -33,8 +33,8 @@ function ToolBadge({ detail }: { detail: ToolDetail }) {
         {detail.name}
       </span>
       {summary && (
-        <span className="text-gray-500 font-mono truncate max-w-[400px]" title={detail.input}>
-          {summary}
+        <span className="text-gray-500 font-mono break-all" title={detail.input}>
+          {detail.input}
         </span>
       )}
     </div>

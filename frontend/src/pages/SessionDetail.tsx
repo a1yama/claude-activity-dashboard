@@ -4,8 +4,14 @@ import { MessageList } from '../components/MessageList';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import type { SessionDetail as SessionDetailType, SessionMessage } from '../types/api';
 
+function parseDate(iso: string): Date {
+  const d = new Date(iso);
+  if (!isNaN(d.getTime())) return d;
+  return new Date(iso + 'Z');
+}
+
 function formatDateTime(iso: string): string {
-  const d = new Date(iso + 'Z');
+  const d = parseDate(iso);
   return d.toLocaleString('ja-JP', {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -13,7 +19,7 @@ function formatDateTime(iso: string): string {
 }
 
 function duration(start: string, end: string): string {
-  const ms = new Date(end + 'Z').getTime() - new Date(start + 'Z').getTime();
+  const ms = parseDate(end).getTime() - parseDate(start).getTime();
   const mins = Math.round(ms / 60000);
   if (mins < 60) return `${mins}分`;
   const hours = Math.floor(mins / 60);
