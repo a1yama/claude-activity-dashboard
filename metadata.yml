@@ -1,0 +1,75 @@
+title: Claude Activity Dashboard
+description: Claude Code の活動ログビューア
+databases:
+  claude_activity:
+    tables:
+      sessions:
+        label_column: session_id
+        sort_desc: last_message_at
+      messages:
+        sort_desc: timestamp_jst
+    queries:
+      daily-activity:
+        title: 日別アクティビティ
+        sql: |
+          SELECT
+            date_jst AS date,
+            COUNT(DISTINCT session_id) AS sessions,
+            SUM(CASE WHEN type = 'user' AND is_meta = 0 THEN 1 ELSE 0 END) AS user_messages,
+            SUM(CASE WHEN type = 'assistant' THEN 1 ELSE 0 END) AS assistant_messages,
+            SUM(tool_count) AS tool_uses
+          FROM messages
+          GROUP BY date_jst
+          ORDER BY date_jst DESC
+      project-summary:
+        title: プロジェクト別サマリー
+        sql: |
+          SELECT
+            project_name,
+            COUNT(*) AS total_sessions,
+            SUM(user_message_count) AS total_user_messages,
+            SUM(tool_use_count) AS total_tool_uses,
+            MIN(first_message_at) AS first_used,
+            MAX(last_message_at) AS last_used
+          FROM sessions
+          GROUP BY project_name
+          ORDER BY last_used DESC
+      hourly-distribution:
+        title: 時間帯別メッセージ分布
+        sql: |
+          SELECT
+            hour_jst AS hour,
+            COUNT(*) AS message_count,
+            SUM(CASE WHEN type = 'user' AND is_meta = 0 THEN 1 ELSE 0 END) AS user_messages
+          FROM messages
+          GROUP BY hour_jst
+          ORDER BY hour_jst
+      tool-usage:
+        title: ツール使用ランキング
+        sql: |
+          WITH tool_split AS (
+            SELECT value AS tool_name
+            FROM messages, json_each('["' || REPLACE(tool_names, ',', '","') || '"]')
+            WHERE tool_names != ''
+          )
+          SELECT tool_name, COUNT(*) AS usage_count
+          FROM tool_split
+          WHERE tool_name != ''
+          GROUP BY tool_name
+          ORDER BY usage_count DESC
+          LIMIT 30
+      recent-sessions:
+        title: 最近のセッション
+        sql: |
+          SELECT
+            session_id,
+            project_name,
+            datetime(first_message_at) AS started,
+            datetime(last_message_at) AS ended,
+            message_count,
+            user_message_count,
+            tool_use_count,
+            claude_version
+          FROM sessions
+          ORDER BY last_message_at DESC
+          LIMIT 50
