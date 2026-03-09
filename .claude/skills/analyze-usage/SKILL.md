@@ -7,6 +7,45 @@ user-invocable: true
 
 Claude Code の活動ログ DB を分析し、ワークフローの改善提案を生成します。
 
+## 手順0: スキーマ確認（重要）
+
+analyze.py を実行した後、**必ず最初にスキーマを確認**してください。これにより、フィールド名の推測によるエラーを防ぎます。
+
+以下のPythonスクリプトで各カテゴリの実際のフィールド名を取得してください：
+
+```python
+import json
+
+# analyze.py の出力ファイルパスを指定
+with open('分析結果ファイルのパス', 'r') as f:
+    data = json.load(f)
+
+# 各カテゴリのスキーマを確認
+for key in ['a1_bash_alternatives', 'a2_consecutive_tools', 'a3_tool_frequency',
+            'b1_repeated_instructions', 'b2_user_messages', 'c1_fix_patterns',
+            'c2_intent_mismatch', 'd1_project_efficiency', 'e1_long_sessions',
+            'e2_hourly_activity']:
+    if data[key] and len(data[key]) > 0:
+        print(f"{key}: {list(data[key][0].keys())}")
+```
+
+### 標準スキーマ（参考）
+
+以下は2026-03時点のスキーマです。将来変更される可能性があるため、**必ず手順0で実際のスキーマを確認**してください。
+
+| カテゴリ | フィールド名 |
+|---------|-------------|
+| `a1_bash_alternatives` | `pattern`, `count`, `examples` |
+| `a2_consecutive_tools` | `consecutive_tool`, `consecutive_count` |
+| `a3_tool_frequency` | `tool_name`, `use_count` |
+| `b1_repeated_instructions` | `instruction`, `repeat_count` |
+| `b2_user_messages` | `content_preview` |
+| `c1_fix_patterns` | `message`, `date_jst`, `project_name` |
+| `c2_intent_mismatch` | `message`, `date_jst`, `project_name` |
+| `d1_project_efficiency` | `project_name`, `sessions`, `user_msgs`, `tool_uses`, `tools_per_user_msg` |
+| `e1_long_sessions` | `session_id`, `duration_minutes`, `message_count` |
+| `e2_hourly_activity` | `hour_jst`, `message_count`, `tool_count` |
+
 ## 手順1: データ最新化と分析実行
 
 `{{PROJECT_ROOT}}` はこのスキルファイルが属するプロジェクトのルートディレクトリです。
@@ -42,16 +81,48 @@ cd {{PROJECT_ROOT}} && python3 analyze.py $ARGUMENTS
 | `e1_long_sessions` | 所要時間TOP10セッション |
 | `e2_hourly_activity` | 時間帯別の活動量 |
 
+**次のステップ:** 手順0に進んで、スキーマ（各カテゴリのフィールド名）を確認してください。
+
 ## 手順2: レポート出力
 
-JSON の各キーをマークダウンテーブルで表示してください（ファイル書き出し不要、直接出力）。
+**重要:** 手順0で確認したスキーマのフィールド名を使用してください。フィールド名を推測しないでください。
 
-### B-2: 頻出キーワード（AI分析）
+以下のPythonスクリプトで全カテゴリのレポートをマークダウン形式で出力してください：
 
-`b2_user_messages` のテキストから、あなた（Claude）が以下を分析してください:
-- 頻出する動詞・名詞・フレーズ（日本語・英語両方）を上位20個抽出
-- 単純な助詞・冠詞・前置詞は除外
-- 結果をマークダウンテーブルで出力
+```python
+import json
+import re
+from collections import Counter
+
+with open('分析結果ファイルのパス', 'r') as f:
+    data = json.load(f)
+
+# 基本統計
+print('# 活動ログ分析レポート')
+bs = data['basic_stats']
+print(f"- セッション数: {bs['total_sessions']}")
+# ... 以下、手順0で確認したフィールド名を使用して出力
+
+# B-2: 頻出キーワード分析（AI分析）
+all_text = ' '.join([msg['content_preview'] for msg in data['b2_user_messages'] if 'content_preview' in msg])
+# 正規表現でキーワード抽出、Counter で集計
+```
+
+### レポート項目
+
+1. 基本統計
+2. A-1: Bash代替可能パターン
+3. A-2: 連続ツール使用
+4. A-3: ツール使用頻度
+5. B-1: 繰り返し指示
+6. B-2: 頻出キーワード（AI分析）
+   - `b2_user_messages` の `content_preview` から、頻出する動詞・名詞・フレーズ（日本語・英語両方）を上位20個抽出
+   - 単純な助詞・冠詞・前置詞は除外
+7. C-1: 修正・やり直しパターン
+8. C-2: 意図ズレ指示
+9. D-1: プロジェクト別効率
+10. E-1: 長期セッション
+11. E-2: 時間帯別活動
 
 データが0件のカテゴリは「該当データなし」と記載してください。
 
