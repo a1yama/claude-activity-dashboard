@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { StatCard } from '../components/StatCard';
 import { DailyActivityChart } from '../components/DailyActivityChart';
 import { HourlyDistributionChart } from '../components/HourlyDistributionChart';
@@ -7,56 +6,6 @@ import { ProjectSummary } from '../components/ProjectSummary';
 import { RecentSessions } from '../components/RecentSessions';
 import { useQuery } from '../hooks/useQuery';
 import type { DailyActivity, ProjectSummary as ProjectSummaryType } from '../types/api';
-
-function RefreshButton() {
-  const [refreshing, setRefreshing] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    setMessage('');
-    try {
-      const res = await fetch('/api/refresh', { method: 'POST' });
-      const text = await res.text();
-      let json: { ok?: boolean; message?: string };
-      try {
-        json = JSON.parse(text);
-      } catch {
-        // Fallback: non-JSON response (e.g. HTML from old Datasette)
-        if (res.ok && !text.includes('エラー')) {
-          setMessage('更新完了');
-          setTimeout(() => window.location.reload(), 1000);
-          return;
-        }
-        setMessage(`更新エラー (レスポンス: ${text.slice(0, 100)})`);
-        return;
-      }
-      if (json.ok) {
-        setMessage('更新完了');
-        setTimeout(() => window.location.reload(), 1000);
-      } else {
-        setMessage(`更新エラー: ${json.message}`);
-      }
-    } catch (e) {
-      setMessage(`通信エラー: ${e instanceof Error ? e.message : e}`);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3">
-      {message && <span className="text-sm text-gray-500">{message}</span>}
-      <button
-        onClick={handleRefresh}
-        disabled={refreshing}
-        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-      >
-        {refreshing ? '更新中...' : 'データ更新'}
-      </button>
-    </div>
-  );
-}
 
 export function Dashboard() {
   const { data: daily } = useQuery<DailyActivity>('daily-activity');
@@ -70,12 +19,9 @@ export function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Claude Activity Dashboard</h1>
-            <p className="text-sm text-gray-500">Claude Code の活動ログビューア</p>
-          </div>
-          <RefreshButton />
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <h1 className="text-xl font-bold text-gray-900">Claude Activity Dashboard</h1>
+          <p className="text-sm text-gray-500">Claude Code の活動ログビューア</p>
         </div>
       </header>
 

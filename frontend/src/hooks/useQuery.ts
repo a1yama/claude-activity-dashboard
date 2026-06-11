@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 
-const API_PREFIX = import.meta.env.DEV ? '/api' : '';
+// dev: Vite が /api を Datasette にプロキシ
+// prod: Caddy が /api を Datasette にプロキシ（strip_prefix）
+const API_PREFIX = '/api';
 
 function buildUrl(queryName: string, params?: Record<string, string>): string {
   const base = `${API_PREFIX}/claude_activity/${queryName}.json?_shape=objects`;
