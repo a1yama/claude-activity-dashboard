@@ -200,6 +200,25 @@ def create_fixture_db():
             msg,
         )
 
+    # 新フィールドのサンプル: assistant メッセージにモデル・トークン情報を付与
+    conn.execute(
+        """UPDATE messages SET
+           model = 'claude-fable-5', stop_reason = 'end_turn',
+           input_tokens = 100, output_tokens = 50,
+           cache_creation_tokens = 10, cache_read_tokens = 1000
+           WHERE type = 'assistant'"""
+    )
+
+    # スラッシュコマンド使用のサンプル
+    conn.execute(
+        """INSERT INTO messages
+        (uuid, session_id, type, timestamp, timestamp_jst, date_jst, hour_jst,
+         content_preview, command_name)
+        VALUES ('msg-009', ?, 'user', '2026-03-02T14:10:00+09:00',
+                '2026-03-02 14:10:00', '2026-03-02', 14, '', '/analyze-usage')""",
+        (SESSION_2_ID,),
+    )
+
     conn.commit()
     conn.close()
     print(f"Created fixture DB: {FIXTURE_DB_PATH}")

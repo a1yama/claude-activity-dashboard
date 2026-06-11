@@ -61,6 +61,28 @@ export interface ToolDetail {
   input: string;
 }
 
+export interface TokenUsageDaily {
+  date: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+}
+
+export interface ModelUsage {
+  model: string;
+  sessions: number;
+  messages: number;
+  total_input_tokens: number;
+  output_tokens: number;
+}
+
+export interface CommandUsage {
+  command_name: string;
+  usage_count: number;
+  last_used: string;
+}
+
 export interface RecentSession {
   session_id: string;
   project_name: string;

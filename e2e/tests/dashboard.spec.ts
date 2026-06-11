@@ -53,6 +53,21 @@ test.describe("ダッシュボードページ", () => {
     await expect(page.getByText("時間帯別メッセージ分布")).toBeVisible();
   });
 
+  test("トークン使用量チャートが表示される", async ({ page }) => {
+    await expect(page.getByText("トークン使用量（直近30日）")).toBeVisible();
+  });
+
+  test("モデル別利用状況にモデル名とトークン数が表示される", async ({ page }) => {
+    await expect(page.getByText("モデル別利用状況")).toBeVisible();
+    await expect(page.getByText("claude-fable-5")).toBeVisible();
+  });
+
+  test("スラッシュコマンド使用ランキングが表示される", async ({ page }) => {
+    await expect(
+      page.getByText("スラッシュコマンド使用ランキング")
+    ).toBeVisible();
+  });
+
   test("セッション開始時刻がJSTで表示される", async ({ page }) => {
     // fixture: 2026-03-01T01:00:00+00:00 = JST 3月1日 10:00
     await expect(page.getByText("3月1日 10:00")).toBeVisible();

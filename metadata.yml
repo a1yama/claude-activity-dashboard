@@ -19,6 +19,7 @@ databases:
             SUM(CASE WHEN type = 'assistant' THEN 1 ELSE 0 END) AS assistant_messages,
             SUM(tool_count) AS tool_uses
           FROM messages
+          WHERE is_subagent = 0
           GROUP BY date_jst
           ORDER BY date_jst DESC
       project-summary:
@@ -42,6 +43,7 @@ databases:
             COUNT(*) AS message_count,
             SUM(CASE WHEN type = 'user' AND is_meta = 0 THEN 1 ELSE 0 END) AS user_messages
           FROM messages
+          WHERE is_subagent = 0
           GROUP BY hour_jst
           ORDER BY hour_jst
       tool-usage:
@@ -50,7 +52,7 @@ databases:
           WITH tool_split AS (
             SELECT value AS tool_name
             FROM messages, json_each(tool_names)
-            WHERE tool_names != ''
+            WHERE tool_names != '' AND is_subagent = 0
           )
           SELECT tool_name, COUNT(*) AS usage_count
           FROM tool_split
@@ -87,8 +89,56 @@ databases:
             tool_details,
             is_meta
           FROM messages
-          WHERE session_id = :session_id
+          WHERE session_id = :session_id AND is_subagent = 0
           ORDER BY timestamp_jst ASC
+      token-usage-daily:
+        title: 日別トークン使用量（サブエージェント含む）
+        sql: |
+          SELECT
+            date_jst AS date,
+            SUM(input_tokens) AS input_tokens,
+            SUM(output_tokens) AS output_tokens,
+            SUM(cache_creation_tokens) AS cache_creation_tokens,
+            SUM(cache_read_tokens) AS cache_read_tokens
+          FROM messages
+          WHERE type = 'assistant'
+          GROUP BY date_jst
+          ORDER BY date_jst DESC
+      model-usage:
+        title: モデル別利用状況（サブエージェント含む）
+        sql: |
+          SELECT
+            model,
+            COUNT(DISTINCT session_id) AS sessions,
+            COUNT(*) AS messages,
+            SUM(input_tokens + cache_creation_tokens + cache_read_tokens) AS total_input_tokens,
+            SUM(output_tokens) AS output_tokens
+          FROM messages
+          WHERE type = 'assistant' AND model != '' AND model NOT LIKE '<%'
+          GROUP BY model
+          ORDER BY output_tokens DESC
+      command-usage:
+        title: スラッシュコマンド使用ランキング
+        sql: |
+          SELECT
+            command_name,
+            COUNT(*) AS usage_count,
+            MAX(date_jst) AS last_used
+          FROM messages
+          WHERE command_name != ''
+          GROUP BY command_name
+          ORDER BY usage_count DESC
+          LIMIT 30
+      friction-daily:
+        title: 日別の摩擦指標（ツールエラー数）
+        sql: |
+          SELECT
+            date_jst AS date,
+            SUM(error_count) AS tool_errors,
+            SUM(CASE WHEN type = 'assistant' AND stop_reason = 'refusal' THEN 1 ELSE 0 END) AS refusals
+          FROM messages
+          GROUP BY date_jst
+          ORDER BY date_jst DESC
       recent-sessions:
         title: 最近のセッション
         sql: |

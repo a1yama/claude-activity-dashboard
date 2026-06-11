@@ -2,6 +2,9 @@ import { StatCard } from '../components/StatCard';
 import { DailyActivityChart } from '../components/DailyActivityChart';
 import { HourlyDistributionChart } from '../components/HourlyDistributionChart';
 import { ToolUsageChart } from '../components/ToolUsageChart';
+import { TokenUsageChart } from '../components/TokenUsageChart';
+import { ModelUsageTable } from '../components/ModelUsageTable';
+import { CommandUsageChart } from '../components/CommandUsageChart';
 import { ProjectSummary } from '../components/ProjectSummary';
 import { RecentSessions } from '../components/RecentSessions';
 import { useQuery } from '../hooks/useQuery';
@@ -53,6 +56,13 @@ export function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <DailyActivityChart />
           <HourlyDistributionChart />
+        </div>
+
+        <TokenUsageChart />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <ModelUsageTable />
+          <CommandUsageChart />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
