@@ -59,6 +59,16 @@ make ingest
 
 ブラウザからは `/-/refresh` にアクセスして「更新実行」ボタンでも実行できます。
 
+## 本番デプロイ / 運用
+
+本番は **さくらVPS (SSD)** 上の Datasette + Caddy で稼働中（Basic 認証で保護）。
+
+- 公開 URL: https://dashboard.a1yama.com/
+- ssh エントリ: `ssh a1yama-pj`
+- 同期: Claude Code の SessionEnd hook が `scripts/auto-sync.sh` を起動し自動同期（ingest → WAL checkpoint → scp → datasette restart）。手動で同期したい場合は `make sync`
+
+詳細手順・Dockerfile・Caddyfile は [`docs/deployment.md`](docs/deployment.md) を参照。
+
 ## ダッシュボード機能
 
 ### 概要画面 (`/`)
