@@ -31,8 +31,9 @@ def create_fixture_db():
             SESSION_1_ID,
             "/Users/test/ghq/github.com/test/my-project",
             "ghq/github.com/test/my-project",
-            "2026-03-01 10:00:00",
-            "2026-03-01 10:30:00",
+            # ingest.py と同じ UTC オフセット付き ISO 形式（JST では 3/1 10:00〜10:30）
+            "2026-03-01T01:00:00+00:00",
+            "2026-03-01T01:30:00+00:00",
             5,  # message_count
             2,  # user_message_count
             3,  # assistant_message_count
@@ -51,8 +52,9 @@ def create_fixture_db():
             SESSION_2_ID,
             "/Users/test/ghq/github.com/test/other-project",
             "ghq/github.com/test/other-project",
-            "2026-03-02 14:00:00",
-            "2026-03-02 14:45:00",
+            # JST では 3/2 14:00〜14:45
+            "2026-03-02T05:00:00+00:00",
+            "2026-03-02T05:45:00+00:00",
             3,  # message_count
             1,  # user_message_count
             2,  # assistant_message_count

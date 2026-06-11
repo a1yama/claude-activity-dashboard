@@ -5,7 +5,7 @@ import { LoadingSpinner } from './LoadingSpinner';
 function formatDate(iso: string | null): string {
   if (!iso) return '-';
   const d = new Date(iso);
-  return d.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', timeZone: 'Asia/Tokyo' });
 }
 
 export function ProjectSummary() {

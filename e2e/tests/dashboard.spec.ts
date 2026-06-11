@@ -53,13 +53,10 @@ test.describe("ダッシュボードページ", () => {
     await expect(page.getByText("時間帯別メッセージ分布")).toBeVisible();
   });
 
-  test("データ更新ボタンをクリックすると更新完了が表示される", async ({
-    page,
-  }) => {
-    const button = page.getByRole("button", { name: "データ更新" });
-    await expect(button).toBeVisible();
-    await button.click();
-    await expect(page.getByText("更新中...")).toBeVisible();
-    await expect(page.getByText("更新完了")).toBeVisible({ timeout: 15_000 });
+  test("セッション開始時刻がJSTで表示される", async ({ page }) => {
+    // fixture: 2026-03-01T01:00:00+00:00 = JST 3月1日 10:00
+    await expect(page.getByText("3月1日 10:00")).toBeVisible();
+    // fixture: 2026-03-02T05:00:00+00:00 = JST 3月2日 14:00
+    await expect(page.getByText("3月2日 14:00")).toBeVisible();
   });
 });

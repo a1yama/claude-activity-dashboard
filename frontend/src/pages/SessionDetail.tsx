@@ -5,9 +5,9 @@ import { LoadingSpinner } from '../components/LoadingSpinner';
 import type { SessionDetail as SessionDetailType, SessionMessage } from '../types/api';
 
 function parseDate(iso: string): Date {
-  const d = new Date(iso);
-  if (!isNaN(d.getTime())) return d;
-  return new Date(iso + 'Z');
+  // DB の時刻は UTC。オフセットなしの文字列はブラウザがローカル時刻と解釈するため UTC を明示する
+  const hasOffset = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasOffset ? iso : iso.replace(' ', 'T') + 'Z');
 }
 
 function formatDateTime(iso: string): string {
@@ -15,6 +15,7 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString('ja-JP', {
     year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Tokyo',
   });
 }
 

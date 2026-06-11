@@ -95,8 +95,8 @@ databases:
           SELECT
             session_id,
             project_name,
-            datetime(first_message_at) AS started,
-            datetime(last_message_at) AS ended,
+            first_message_at AS started,
+            last_message_at AS ended,
             message_count,
             user_message_count,
             tool_use_count,
