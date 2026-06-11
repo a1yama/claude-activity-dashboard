@@ -93,6 +93,57 @@ def extract_tool_details(content) -> str:
     return json.dumps(details) if details else ""
 
 
+def extract_command_name(content) -> str:
+    """Extract slash command name from user message content like <command-name>/foo</command-name>."""
+    if not isinstance(content, str):
+        return ""
+    m = re.search(r"<command-name>([^<]+)</command-name>", content)
+    return m.group(1).strip() if m else ""
+
+
+def count_tool_errors(content) -> int:
+    """Count tool_result blocks with is_error in user message content."""
+    if not isinstance(content, list):
+        return 0
+    return sum(
+        1
+        for b in content
+        if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error")
+    )
+
+
+def extract_usage(message: dict) -> tuple[int, int, int, int]:
+    """Extract (input, output, cache_creation, cache_read) token counts from assistant message."""
+    u = message.get("usage") or {}
+    return (
+        u.get("input_tokens") or 0,
+        u.get("output_tokens") or 0,
+        u.get("cache_creation_input_tokens") or 0,
+        u.get("cache_read_input_tokens") or 0,
+    )
+
+
+# 過去に ingest 済みの DB にも列を追加できるよう、CREATE TABLE とは別に管理する
+MESSAGES_EXTRA_COLUMNS = {
+    "model": "TEXT DEFAULT ''",
+    "stop_reason": "TEXT DEFAULT ''",
+    "input_tokens": "INTEGER DEFAULT 0",
+    "output_tokens": "INTEGER DEFAULT 0",
+    "cache_creation_tokens": "INTEGER DEFAULT 0",
+    "cache_read_tokens": "INTEGER DEFAULT 0",
+    "command_name": "TEXT DEFAULT ''",
+    "error_count": "INTEGER DEFAULT 0",
+    "is_subagent": "INTEGER DEFAULT 0",
+}
+
+
+def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict):
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, decl in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
 def init_db(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
@@ -132,11 +183,22 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
         CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_name);
     """)
+    _ensure_columns(conn, "messages", MESSAGES_EXTRA_COLUMNS)
     return conn
 
 
-def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str, project_name: str):
-    session_id = jsonl_path.stem
+def ingest_session(
+    conn: sqlite3.Connection,
+    jsonl_path: Path,
+    project_dir: str,
+    project_name: str,
+    session_id: str | None = None,
+    is_subagent: bool = False,
+):
+    # サブエージェントは親セッションの session_id に紐付けて messages のみ取り込み、
+    # sessions の統計（メインスレッドの集計）は上書きしない
+    if session_id is None:
+        session_id = jsonl_path.stem
     messages = []
     first_ts = None
     last_ts = None
@@ -191,6 +253,11 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
             tool_names = ""
             tool_details = ""
             is_meta = 1 if record.get("isMeta") else 0
+            model = ""
+            stop_reason = ""
+            input_tokens = output_tokens = cache_creation_tokens = cache_read_tokens = 0
+            command_name = ""
+            error_count = 0
 
             if msg_type in ("user", "assistant"):
                 msg = record.get("message", {})
@@ -202,8 +269,17 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
                     tool_details = extract_tool_details(content)
                     tool_count += msg_tool_count
                     assistant_count += 1
-                elif not is_meta:
-                    user_count += 1
+                    model = msg.get("model") or ""
+                    stop_reason = msg.get("stop_reason") or ""
+                    (
+                        input_tokens, output_tokens,
+                        cache_creation_tokens, cache_read_tokens,
+                    ) = extract_usage(msg)
+                else:
+                    command_name = extract_command_name(content)
+                    error_count = count_tool_errors(content)
+                    if not is_meta:
+                        user_count += 1
             elif msg_type == "system":
                 content_preview = parse_message_content(record.get("content", ""))
 
@@ -211,30 +287,37 @@ def ingest_session(conn: sqlite3.Connection, jsonl_path: Path, project_dir: str,
                 uuid, session_id, msg_type, record.get("subtype", ""),
                 timestamp, timestamp_jst, date_jst, hour_jst,
                 content_preview, msg_tool_count, tool_names, tool_details, is_meta,
+                model, stop_reason,
+                input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                command_name, error_count, 1 if is_subagent else 0,
             ))
 
     if not messages:
         return
 
-    # Upsert session
-    conn.execute("""
-        INSERT OR REPLACE INTO sessions
-        (session_id, project_dir, project_name, first_message_at, last_message_at,
-         message_count, user_message_count, assistant_message_count, tool_use_count, claude_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        session_id, project_dir, project_name,
-        first_ts.isoformat() if first_ts else None,
-        last_ts.isoformat() if last_ts else None,
-        len(messages), user_count, assistant_count, tool_count, version,
-    ))
+    if not is_subagent:
+        # Upsert session
+        conn.execute("""
+            INSERT OR REPLACE INTO sessions
+            (session_id, project_dir, project_name, first_message_at, last_message_at,
+             message_count, user_message_count, assistant_message_count, tool_use_count, claude_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            session_id, project_dir, project_name,
+            first_ts.isoformat() if first_ts else None,
+            last_ts.isoformat() if last_ts else None,
+            len(messages), user_count, assistant_count, tool_count, version,
+        ))
 
     # Upsert messages
     conn.executemany("""
         INSERT OR REPLACE INTO messages
         (uuid, session_id, type, subtype, timestamp, timestamp_jst, date_jst, hour_jst,
-         content_preview, tool_count, tool_names, tool_details, is_meta)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         content_preview, tool_count, tool_names, tool_details, is_meta,
+         model, stop_reason,
+         input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+         command_name, error_count, is_subagent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, messages)
 
 
@@ -257,6 +340,14 @@ def ingest_all(db_path: Path):
                 continue
             ingest_session(conn, jsonl_path, project_dir.name, project_name)
             total_sessions += 1
+
+            # サブエージェントログ (<session_id>/subagents/*.jsonl) を親セッションに紐付けて取り込む
+            subagents_dir = project_dir / jsonl_path.stem / "subagents"
+            for sub_path in sorted(subagents_dir.glob("*.jsonl")):
+                ingest_session(
+                    conn, sub_path, project_dir.name, project_name,
+                    session_id=jsonl_path.stem, is_subagent=True,
+                )
 
     conn.commit()
     conn.close()

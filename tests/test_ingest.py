@@ -196,3 +196,173 @@ class TestIngestSession:
         msg = conn.execute("SELECT date_jst, hour_jst FROM messages").fetchone()
         assert msg[0] == "2026-03-09"  # JST is next day
         assert msg[1] == 0  # midnight JST
+
+
+class TestExtractCommandName:
+    def test_slash_command(self):
+        from ingest import extract_command_name
+        content = "<command-name>/model</command-name>\n<command-message>model</command-message>"
+        assert extract_command_name(content) == "/model"
+
+    def test_no_command(self):
+        from ingest import extract_command_name
+        assert extract_command_name("just text") == ""
+
+    def test_non_string(self):
+        from ingest import extract_command_name
+        assert extract_command_name([{"type": "text", "text": "hi"}]) == ""
+
+
+class TestCountToolErrors:
+    def test_with_errors(self):
+        from ingest import count_tool_errors
+        content = [
+            {"type": "tool_result", "is_error": True, "content": "boom"},
+            {"type": "tool_result", "content": "ok"},
+            {"type": "tool_result", "is_error": True, "content": "boom2"},
+        ]
+        assert count_tool_errors(content) == 2
+
+    def test_no_errors(self):
+        from ingest import count_tool_errors
+        assert count_tool_errors([{"type": "tool_result", "content": "ok"}]) == 0
+
+    def test_string_content(self):
+        from ingest import count_tool_errors
+        assert count_tool_errors("text") == 0
+
+
+class TestExtractUsage:
+    def test_full_usage(self):
+        from ingest import extract_usage
+        msg = {"usage": {
+            "input_tokens": 10, "output_tokens": 20,
+            "cache_creation_input_tokens": 30, "cache_read_input_tokens": 40,
+        }}
+        assert extract_usage(msg) == (10, 20, 30, 40)
+
+    def test_missing_usage(self):
+        from ingest import extract_usage
+        assert extract_usage({}) == (0, 0, 0, 0)
+
+    def test_null_values(self):
+        from ingest import extract_usage
+        assert extract_usage({"usage": {"input_tokens": None}}) == (0, 0, 0, 0)
+
+
+class TestNewMessageFields:
+    def _make_jsonl(self, tmp_path, records, name="test-session.jsonl"):
+        path = tmp_path / name
+        with open(path, "w") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+        return path
+
+    def test_model_usage_stop_reason_stored(self, tmp_path):
+        conn = init_db(tmp_path / "test.db")
+        records = [
+            {
+                "uuid": "a1", "type": "assistant",
+                "timestamp": "2026-03-08T10:00:00Z",
+                "message": {
+                    "content": [{"type": "text", "text": "Hi"}],
+                    "model": "claude-fable-5",
+                    "stop_reason": "end_turn",
+                    "usage": {
+                        "input_tokens": 100, "output_tokens": 50,
+                        "cache_creation_input_tokens": 10, "cache_read_input_tokens": 5000,
+                    },
+                },
+            },
+        ]
+        ingest_session(conn, self._make_jsonl(tmp_path, records), "d", "p")
+        conn.commit()
+        row = conn.execute(
+            "SELECT model, stop_reason, input_tokens, output_tokens,"
+            " cache_creation_tokens, cache_read_tokens FROM messages"
+        ).fetchone()
+        assert row == ("claude-fable-5", "end_turn", 100, 50, 10, 5000)
+
+    def test_command_and_error_stored(self, tmp_path):
+        conn = init_db(tmp_path / "test.db")
+        records = [
+            {
+                "uuid": "u1", "type": "user",
+                "timestamp": "2026-03-08T10:00:00Z",
+                "message": {"content": "<command-name>/loop</command-name>"},
+            },
+            {
+                "uuid": "u2", "type": "user",
+                "timestamp": "2026-03-08T10:01:00Z",
+                "message": {"content": [
+                    {"type": "tool_result", "is_error": True, "content": "err"},
+                ]},
+            },
+        ]
+        ingest_session(conn, self._make_jsonl(tmp_path, records), "d", "p")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT uuid, command_name, error_count FROM messages ORDER BY uuid"
+        ).fetchall()
+        assert rows[0] == ("u1", "/loop", 0)
+        assert rows[1] == ("u2", "", 1)
+
+    def test_subagent_ingest_does_not_touch_sessions(self, tmp_path):
+        conn = init_db(tmp_path / "test.db")
+        main_records = [
+            {"uuid": "m1", "type": "user", "timestamp": "2026-03-08T10:00:00Z",
+             "message": {"content": "main"}},
+        ]
+        main_path = self._make_jsonl(tmp_path, main_records, "parent-session.jsonl")
+        ingest_session(conn, main_path, "d", "p")
+
+        sub_records = [
+            {"uuid": "s1", "type": "assistant", "timestamp": "2026-03-08T10:05:00Z",
+             "message": {"content": [{"type": "text", "text": "sub"}],
+                          "model": "claude-haiku-4-5",
+                          "usage": {"input_tokens": 1, "output_tokens": 2}}},
+        ]
+        sub_path = self._make_jsonl(tmp_path, sub_records, "agent-001.jsonl")
+        ingest_session(conn, sub_path, "d", "p",
+                       session_id="parent-session", is_subagent=True)
+        conn.commit()
+
+        # sessions はメインの1行のみ・統計は上書きされない
+        sessions = conn.execute("SELECT session_id, message_count FROM sessions").fetchall()
+        assert sessions == [("parent-session", 1)]
+        # サブエージェントメッセージは親 session_id + is_subagent=1 で格納
+        sub = conn.execute(
+            "SELECT session_id, is_subagent, model FROM messages WHERE uuid = 's1'"
+        ).fetchone()
+        assert sub == ("parent-session", 1, "claude-haiku-4-5")
+
+
+class TestSchemaMigration:
+    def test_old_db_gains_new_columns(self, tmp_path):
+        # 旧スキーマ（新列なし）の DB を作って init_db でマイグレーションされること
+        db_path = tmp_path / "old.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE messages (
+                uuid TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL,
+                subtype TEXT, timestamp TEXT NOT NULL, timestamp_jst TEXT NOT NULL,
+                date_jst TEXT NOT NULL, hour_jst INTEGER NOT NULL,
+                content_preview TEXT, tool_count INTEGER DEFAULT 0,
+                tool_names TEXT, tool_details TEXT, is_meta INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute(
+            "INSERT INTO messages (uuid, session_id, type, timestamp, timestamp_jst,"
+            " date_jst, hour_jst) VALUES ('old1', 's', 'user', 't', 't', '2026-01-01', 0)"
+        )
+        conn.commit()
+        conn.close()
+
+        conn = init_db(db_path)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
+        assert {"model", "input_tokens", "command_name", "is_subagent"} <= cols
+        # 既存行はデフォルト値で読める
+        row = conn.execute(
+            "SELECT is_subagent, input_tokens FROM messages WHERE uuid = 'old1'"
+        ).fetchone()
+        assert row == (0, 0)
