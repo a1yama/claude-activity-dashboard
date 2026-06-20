@@ -1,0 +1,27 @@
+services:
+  datasette:
+    build:
+      context: .
+      dockerfile: docker/datasette.Dockerfile
+    image: claude-dashboard-datasette:latest
+    container_name: claude-datasette
+    restart: unless-stopped
+    expose: ["8765"]
+    volumes:
+      - ./data:/data:ro
+      - ./repo/metadata.yml:/app/metadata.yml:ro
+      - ./repo/plugins:/app/plugins:ro
+    networks: [web]
+
+  frontend-build:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run build"
+    volumes:
+      - ./repo/frontend:/app
+      - ./static:/static
+    profiles: ["build"]
+
+networks:
+  web:
+    external: true

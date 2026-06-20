@@ -50,27 +50,8 @@ keiba (`docs/deployment.md`) と同じ AlmaLinux 10 の構築（Caddy 起動済�
 
 ### 2. Caddy 設定追加
 
-`/srv/caddy/Caddyfile` に追記して `caddy reload`:
-```caddyfile
-dashboard.a1yama.com {
-    basic_auth {
-        a1yama $2a$14$<bcrypt_hash>
-    }
-    handle /api/* {
-        uri strip_prefix /api
-        reverse_proxy claude-datasette:8765
-    }
-    handle {
-        root * /srv/apps/claude-dashboard/static
-        file_server
-        try_files {path} /index.html
-    }
-    encode zstd gzip
-    log {
-        output file /var/log/caddy/dashboard-a1yama.log
-    }
-}
-```
+共有 `/srv/caddy/Caddyfile` に [`deploy/Caddyfile.dashboard.example`](../deploy/Caddyfile.dashboard.example) のブロックを追記し、`<BCRYPT_HASH>` を実値に置換して `caddy reload`。
+（Caddyfile は複数アプリ共有かつ認証ハッシュを含むためリポジトリにはテンプレートのみ置く。）
 
 bcrypt ハッシュ:
 ```bash
@@ -105,50 +86,15 @@ GIT_SSH_COMMAND="ssh -i ~/.ssh/claude_dashboard_deploy" \
 
 ### 5. Dockerfile / compose 配置
 
-`docker/datasette.Dockerfile`:
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-RUN pip install --no-cache-dir "datasette>=0.65" "datasette-dashboards>=0.6"
-ENV TZ=Asia/Tokyo
-EXPOSE 8765
-CMD ["datasette", "serve", "--immutable", "/data/claude_activity.db", \
-     "--metadata", "/app/metadata.yml", \
-     "--plugins-dir", "/app/plugins", \
-     "--host", "0.0.0.0", "--port", "8765", \
-     "--cors"]
+`docker-compose.yml` と `docker/datasette.Dockerfile` は**リポジトリの [`deploy/`](../deploy/) で管理**している（IaC 化済み）。本番では symlink で配置し、`git pull` で更新される。
+
+```bash
+cd /srv/apps/claude-dashboard
+ln -s repo/deploy/docker-compose.yml docker-compose.yml
+ln -s repo/deploy/docker docker
 ```
 
-`docker-compose.yml`:
-```yaml
-services:
-  datasette:
-    build:
-      context: .
-      dockerfile: docker/datasette.Dockerfile
-    image: claude-dashboard-datasette:latest
-    container_name: claude-datasette
-    restart: unless-stopped
-    expose: ["8765"]
-    volumes:
-      - ./data:/data:ro
-      - ./repo/metadata.yml:/app/metadata.yml:ro
-      - ./repo/plugins:/app/plugins:ro
-    networks: [web]
-
-  frontend-build:
-    image: node:22-alpine
-    working_dir: /app
-    command: sh -c "npm ci && npm run build"
-    volumes:
-      - ./repo/frontend:/app
-      - ./static:/static
-    profiles: ["build"]
-
-networks:
-  web:
-    external: true
-```
+詳細・初回移行手順・パス設計は [`deploy/README.md`](../deploy/README.md) を参照。
 
 ### 6. 初回データ転送（Mac から）
 
@@ -210,7 +156,7 @@ Makefile 内のサーバ宛先は ssh エントリ `a1yama-pj` を前提にし�
 
 ## 更新デプロイ (運用中)
 
-ソースコード（`metadata.yml`, `plugins/`, `frontend/`）の更新:
+ソースコード（`metadata.yml`, `plugins/`, `frontend/`, `deploy/`）の更新:
 
 ```bash
 ssh a1yama-pj
@@ -221,9 +167,11 @@ cd ..
 # frontend が変わった場合
 docker compose --profile build run --rm frontend-build
 
-# Datasette 設定（metadata.yml / plugins）が変わった場合
-docker compose restart datasette
+# Datasette 設定（metadata.yml / plugins / deploy の compose・Dockerfile）が変わった場合
+docker compose up -d --build datasette
 ```
+
+> `docker-compose.yml` / `Dockerfile` は `repo/deploy/` への symlink なので、`git pull` だけで実体が更新される（手編集不要）。compose 自体を変えた場合は `--build` 付きで再起動する。
 
 ## 監視 / トラブルシュート
 

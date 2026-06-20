@@ -1,0 +1,25 @@
+# dashboard.a1yama.com 用 Caddy 設定ブロック（テンプレート）
+#
+# 本番の実ファイルは複数アプリ共有の /srv/caddy/Caddyfile にあり、
+# basic_auth のハッシュ（認証情報）を含むためリポジトリには取り込まない。
+# このブロックを共有 Caddyfile に貼り、<BCRYPT_HASH> を実際の値に置換して
+# `caddy reload` する。ハッシュ生成: docker exec caddy caddy hash-password --plaintext "<password>"
+
+dashboard.a1yama.com {
+	basic_auth {
+		a1yama <BCRYPT_HASH>
+	}
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy claude-datasette:8765
+	}
+	handle {
+		root * /srv/apps/claude-dashboard/static
+		file_server
+		try_files {path} /index.html
+	}
+	encode zstd gzip
+	log {
+		output file /var/log/caddy/dashboard-a1yama.log
+	}
+}
