@@ -3,6 +3,10 @@
 # hook 側は即座に制御を返すため、このスクリプトは nohup でデタッチ起動される前提。
 set -u
 
+# 提案生成(generate-proposals.py)が起動した headless `claude -p` の SessionEnd hook から
+# 再帰的に呼ばれた場合はここで抜ける(無限同期ループ防止)
+[ -n "${CLAUDE_CODE_DASHBOARD_SKIP_SYNC:-}" ] && exit 0
+
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECTS_DIR="$HOME/.claude/projects"
 STATE="$REPO/data/.last_synced"      # 前回同期成功時点のマーカー（mtime 比較用）

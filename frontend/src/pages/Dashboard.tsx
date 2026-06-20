@@ -6,6 +6,7 @@ import { TokenUsageChart } from '../components/TokenUsageChart';
 import { ModelUsageTable } from '../components/ModelUsageTable';
 import { CommandUsageChart } from '../components/CommandUsageChart';
 import { ProjectSummary } from '../components/ProjectSummary';
+import { ImprovementProposals } from '../components/ImprovementProposals';
 import { RecentSessions } from '../components/RecentSessions';
 import { useQuery } from '../hooks/useQuery';
 import type { DailyActivity, ProjectSummary as ProjectSummaryType } from '../types/api';
@@ -69,6 +70,8 @@ export function Dashboard() {
           <ToolUsageChart />
           <ProjectSummary />
         </div>
+
+        <ImprovementProposals />
 
         <RecentSessions />
       </main>

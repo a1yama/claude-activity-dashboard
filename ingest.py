@@ -182,6 +182,18 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date_jst);
         CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
         CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_name);
+
+        -- 系統B: 週次でLLMが生成する改善提案。ingest では触らず保持する
+        CREATE TABLE IF NOT EXISTS improvement_proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            generated_at TEXT NOT NULL,
+            period_days INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            suggestion TEXT NOT NULL,
+            target_file TEXT DEFAULT ''
+        );
     """)
     _ensure_columns(conn, "messages", MESSAGES_EXTRA_COLUMNS)
     return conn

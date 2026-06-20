@@ -139,6 +139,26 @@ databases:
           FROM messages
           GROUP BY date_jst
           ORDER BY date_jst DESC
+      improvement-proposals:
+        title: 改善候補（系統B・週次自動生成）
+        sql: |
+          SELECT
+            category,
+            title,
+            rationale,
+            suggestion,
+            target_file,
+            generated_at,
+            period_days
+          FROM improvement_proposals
+          ORDER BY
+            CASE category
+              WHEN 'claude_md' THEN 0
+              WHEN 'skill' THEN 1
+              WHEN 'prompt' THEN 2
+              ELSE 3
+            END,
+            id
       recent-sessions:
         title: 最近のセッション
         sql: |

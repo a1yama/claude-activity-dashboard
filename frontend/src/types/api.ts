@@ -83,6 +83,16 @@ export interface CommandUsage {
   last_used: string;
 }
 
+export interface ImprovementProposal {
+  category: 'claude_md' | 'skill' | 'prompt';
+  title: string;
+  rationale: string;
+  suggestion: string;
+  target_file: string;
+  generated_at: string;
+  period_days: number;
+}
+
 export interface RecentSession {
   session_id: string;
   project_name: string;
