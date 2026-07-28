@@ -84,6 +84,7 @@ export interface CommandUsage {
 }
 
 export interface ImprovementProposal {
+  id: number;
   category: 'claude_md' | 'skill' | 'prompt';
   title: string;
   rationale: string;
@@ -91,6 +92,8 @@ export interface ImprovementProposal {
   target_file: string;
   generated_at: string;
   period_days: number;
+  status: 'open' | 'adopted' | 'rejected';
+  decided_at: string;
 }
 
 export interface RecentSession {
@@ -102,4 +105,5 @@ export interface RecentSession {
   user_message_count: number;
   tool_use_count: number;
   claude_version: string | null;
+  summary: string | null;
 }

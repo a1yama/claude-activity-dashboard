@@ -41,7 +41,7 @@ export function RecentSessions() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100">
-              <th className="text-left py-3 px-2 font-medium text-gray-500">プロジェクト</th>
+              <th className="text-left py-3 px-2 font-medium text-gray-500">プロジェクト / 概要</th>
               <th className="text-right py-3 px-2 font-medium text-gray-500">開始</th>
               <th className="text-right py-3 px-2 font-medium text-gray-500">所要時間</th>
               <th className="text-right py-3 px-2 font-medium text-gray-500">メッセージ</th>
@@ -56,7 +56,12 @@ export function RecentSessions() {
                 className="contents"
               >
                 <tr className="border-b border-gray-50 hover:bg-indigo-50 transition-colors cursor-pointer">
-                  <td className="py-3 px-2 font-mono text-xs text-indigo-700 max-w-[250px] truncate">{s.project_name}</td>
+                  <td className="py-3 px-2 max-w-[420px]">
+                    <div className="font-mono text-xs text-indigo-700 truncate">{s.project_name}</div>
+                    {s.summary && (
+                      <div className="text-xs text-gray-500 truncate mt-0.5">{s.summary}</div>
+                    )}
+                  </td>
                   <td className="text-right py-3 px-2 text-gray-500 whitespace-nowrap">{formatDateTime(s.started)}</td>
                   <td className="text-right py-3 px-2 tabular-nums whitespace-nowrap">{duration(s.started, s.ended)}</td>
                   <td className="text-right py-3 px-2 tabular-nums">{s.message_count}</td>

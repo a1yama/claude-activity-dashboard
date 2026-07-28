@@ -147,15 +147,19 @@ databases:
         title: 改善候補（系統B・週次自動生成）
         sql: |
           SELECT
+            id,
             category,
             title,
             rationale,
             suggestion,
             target_file,
             generated_at,
-            period_days
+            period_days,
+            status,
+            decided_at
           FROM improvement_proposals
           ORDER BY
+            status != 'open',
             CASE category
               WHEN 'claude_md' THEN 0
               WHEN 'skill' THEN 1
@@ -166,15 +170,31 @@ databases:
       recent-sessions:
         title: 最近のセッション
         sql: |
+          -- summary は最初の実質的なユーザー発話。プロジェクト名と時刻だけでは
+          -- 目当てのセッションを探せないため、何をしていたかを1行で添える。
           SELECT
-            session_id,
-            project_name,
-            first_message_at AS started,
-            last_message_at AS ended,
-            message_count,
-            user_message_count,
-            tool_use_count,
-            claude_version
-          FROM sessions
-          ORDER BY last_message_at DESC
+            s.session_id,
+            s.project_name,
+            s.first_message_at AS started,
+            s.last_message_at AS ended,
+            s.message_count,
+            s.user_message_count,
+            s.tool_use_count,
+            s.claude_version,
+            (
+              SELECT m.content_preview
+              FROM messages m
+              WHERE m.session_id = s.session_id
+                AND m.type = 'user'
+                AND m.is_meta = 0
+                AND m.is_subagent = 0
+                AND m.command_name = ''
+                AND m.content_preview != ''
+                AND m.content_preview NOT LIKE 'This session is being continued%'
+                AND m.content_preview NOT LIKE 'Caveat:%'
+              ORDER BY m.timestamp
+              LIMIT 1
+            ) AS summary
+          FROM sessions s
+          ORDER BY s.last_message_at DESC
           LIMIT 50

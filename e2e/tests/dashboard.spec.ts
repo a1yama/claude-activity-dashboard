@@ -41,6 +41,8 @@ test.describe("ダッシュボードページ", () => {
     await expect(
       page.getByText("ghq/github.com/test/my-project").first()
     ).toBeVisible();
+    // セッションを探せるよう、最初のユーザー発話が要約として出る
+    await expect(page.getByText("バグを修正してください").first()).toBeVisible();
     await expect(
       page.getByText("ghq/github.com/test/other-project").first()
     ).toBeVisible();
@@ -68,6 +70,13 @@ test.describe("ダッシュボードページ", () => {
     await expect(card.getByText("カスタムコマンド使用ランキング")).toBeVisible();
     await expect(card.getByText("/analyze-usage")).toBeVisible();
     await expect(card.getByText("/exit")).toHaveCount(0);
+  });
+
+  test("改善候補に採否ステータスが表示される", async ({ page }) => {
+    await expect(page.getByText("今週の改善候補")).toBeVisible();
+    await expect(page.getByText("テスト実行をスキル化する")).toBeVisible();
+    await expect(page.getByText("未対応")).toBeVisible();
+    await expect(page.getByText("却下")).toBeVisible();
   });
 
   test("セッション開始時刻がJSTで表示される", async ({ page }) => {
