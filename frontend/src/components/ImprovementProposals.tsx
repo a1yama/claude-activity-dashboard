@@ -1,6 +1,6 @@
 import { useQuery } from '../hooks/useQuery';
 import type { ImprovementProposal } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 const CATEGORY_LABEL: Record<ImprovementProposal['category'], string> = {
   claude_md: 'CLAUDE.md',
@@ -26,51 +26,47 @@ function formatDateTime(iso: string): string {
 }
 
 export function ImprovementProposals() {
-  const { data, loading } = useQuery<ImprovementProposal>('improvement-proposals');
-
-  if (loading) return <LoadingSpinner />;
+  const { data, loading, error } = useQuery<ImprovementProposal>('improvement-proposals');
 
   const generatedAt = data.length > 0 ? data[0].generated_at : null;
   const periodDays = data.length > 0 ? data[0].period_days : null;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <div className="flex items-baseline justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">今週の改善候補</h2>
-        {generatedAt && (
+    <ChartCard
+      title="今週の改善候補"
+      loading={loading}
+      error={error}
+      isEmpty={data.length === 0}
+      emptyMessage="改善候補はまだありません（週次で自動生成されます）。"
+      headerRight={
+        generatedAt && (
           <span className="text-xs text-gray-400">
             直近{periodDays}日 / {formatDateTime(generatedAt)} 生成
           </span>
-        )}
-      </div>
-
-      {data.length === 0 ? (
-        <p className="text-sm text-gray-500">
-          改善候補はまだありません（週次で自動生成されます）。
-        </p>
-      ) : (
-        <ul className="space-y-4">
-          {data.map((p, i) => (
-            <li key={i} className="border border-gray-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className={`text-xs font-medium px-2 py-0.5 rounded ${CATEGORY_STYLE[p.category]}`}
-                >
-                  {CATEGORY_LABEL[p.category]}
-                </span>
-                <span className="font-medium text-gray-900">{p.title}</span>
-              </div>
-              <p className="text-sm text-gray-600 mb-2">{p.rationale}</p>
-              <pre className="text-xs bg-gray-50 text-gray-700 rounded p-3 whitespace-pre-wrap break-words">
-                {p.suggestion}
-              </pre>
-              {p.target_file && (
-                <p className="text-xs text-gray-400 mt-2 font-mono">{p.target_file}</p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+        )
+      }
+    >
+      <ul className="space-y-4">
+        {data.map((p, i) => (
+          <li key={i} className="border border-gray-100 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded ${CATEGORY_STYLE[p.category]}`}
+              >
+                {CATEGORY_LABEL[p.category]}
+              </span>
+              <span className="font-medium text-gray-900">{p.title}</span>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">{p.rationale}</p>
+            <pre className="text-xs bg-gray-50 text-gray-700 rounded p-3 whitespace-pre-wrap break-words">
+              {p.suggestion}
+            </pre>
+            {p.target_file && (
+              <p className="text-xs text-gray-400 mt-2 font-mono">{p.target_file}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </ChartCard>
   );
 }

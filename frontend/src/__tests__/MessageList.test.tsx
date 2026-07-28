@@ -74,7 +74,7 @@ describe('MessageList', () => {
   });
 
   it('renders empty list without errors', () => {
-    const { container } = render(<MessageList messages={[]} />);
-    expect(container.querySelector('.space-y-3')).not.toBeNull();
+    render(<MessageList messages={[]} />);
+    expect(screen.queryByTestId('message-list')).not.toBeNull();
   });
 });

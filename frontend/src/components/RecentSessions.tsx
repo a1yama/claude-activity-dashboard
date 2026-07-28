@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '../hooks/useQuery';
 import type { RecentSession } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 function parseDate(iso: string): Date {
   // DB の時刻は UTC。オフセットなしの文字列はブラウザがローカル時刻と解釈するため UTC を明示する
@@ -28,13 +28,15 @@ function duration(start: string | null, end: string | null): string {
 }
 
 export function RecentSessions() {
-  const { data, loading } = useQuery<RecentSession>('recent-sessions');
-
-  if (loading) return <LoadingSpinner />;
+  const { data, loading, error } = useQuery<RecentSession>('recent-sessions');
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">最近のセッション</h2>
+    <ChartCard
+      title="最近のセッション"
+      loading={loading}
+      error={error}
+      isEmpty={data.length === 0}
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -65,6 +67,6 @@ export function RecentSessions() {
           </tbody>
         </table>
       </div>
-    </div>
+    </ChartCard>
   );
 }

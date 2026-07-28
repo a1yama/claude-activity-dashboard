@@ -11,10 +11,54 @@ import { RecentSessions } from '../components/RecentSessions';
 import { useQuery } from '../hooks/useQuery';
 import type { DailyActivity, ProjectSummary as ProjectSummaryType } from '../types/api';
 
-export function Dashboard() {
-  const { data: daily } = useQuery<DailyActivity>('daily-activity');
-  const { data: projects } = useQuery<ProjectSummaryType>('project-summary');
+type StatCardsProps = {
+  totalSessions: number;
+  totalMessages: number;
+  totalTools: number;
+  todayData: DailyActivity | null;
+  totalsError?: string | null;
+  todayError?: string | null;
+};
 
+function StatCards({
+  totalSessions, totalMessages, totalTools, todayData, totalsError, todayError,
+}: StatCardsProps) {
+  // 取得できていない値を 0 として見せない。値の出所ごとに判定する
+  const value = (n: number) => (totalsError ? '-' : n.toLocaleString());
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <StatCard
+        title="総セッション数"
+        value={value(totalSessions)}
+        icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>}
+      />
+      <StatCard
+        title="総メッセージ数"
+        value={value(totalMessages)}
+        icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
+      />
+      <StatCard
+        title="総ツール使用数"
+        value={value(totalTools)}
+        icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+      />
+      <StatCard
+        title="今日のメッセージ"
+        value={todayError ? '-' : (todayData ? todayData.user_messages.toLocaleString() : '0')}
+        subtitle={todayData && !todayError ? `${todayData.sessions} セッション` : undefined}
+        icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+      />
+    </div>
+  );
+}
+
+export function Dashboard() {
+  const { data: daily, error: dailyError } = useQuery<DailyActivity>('daily-activity');
+  const { data: projects, error: projectsError } = useQuery<ProjectSummaryType>('project-summary');
+
+  // 取得失敗時に統計カードが 0 件として読まれないようにする
+  const statsError = projectsError ?? dailyError;
   const totalSessions = projects.reduce((sum, p) => sum + p.total_sessions, 0);
   const totalMessages = projects.reduce((sum, p) => sum + p.total_user_messages, 0);
   const totalTools = projects.reduce((sum, p) => sum + p.total_tool_uses, 0);
@@ -30,29 +74,20 @@ export function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="総セッション数"
-            value={totalSessions.toLocaleString()}
-            icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>}
-          />
-          <StatCard
-            title="総メッセージ数"
-            value={totalMessages.toLocaleString()}
-            icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
-          />
-          <StatCard
-            title="総ツール使用数"
-            value={totalTools.toLocaleString()}
-            icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
-          />
-          <StatCard
-            title="今日のメッセージ"
-            value={todayData ? todayData.user_messages.toLocaleString() : '0'}
-            subtitle={todayData ? `${todayData.sessions} セッション` : undefined}
-            icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-          />
-        </div>
+        {statsError && (
+          <p className="text-sm text-red-600">
+            統計データを取得できませんでした（{statsError}）。表示中の数値は不完全です。
+          </p>
+        )}
+
+        <StatCards
+          totalSessions={totalSessions}
+          totalMessages={totalMessages}
+          totalTools={totalTools}
+          todayData={todayData}
+          totalsError={projectsError}
+          todayError={dailyError}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <DailyActivityChart />

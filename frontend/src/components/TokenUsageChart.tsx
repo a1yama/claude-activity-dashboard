@@ -3,7 +3,7 @@ import {
 } from 'recharts';
 import { useQuery } from '../hooks/useQuery';
 import type { TokenUsageDaily } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 function formatTokens(v: number): string {
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
@@ -13,16 +13,17 @@ function formatTokens(v: number): string {
 }
 
 export function TokenUsageChart() {
-  const { data, loading } = useQuery<TokenUsageDaily>('token-usage-daily');
-
-  if (loading) return <LoadingSpinner />;
-
+  const { data, loading, error } = useQuery<TokenUsageDaily>('token-usage-daily');
   const chartData = [...data].reverse().slice(-30);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-1">トークン使用量（直近30日）</h2>
-      <p className="text-xs text-gray-400 mb-4">サブエージェント分を含む。キャッシュ読込は右軸</p>
+    <ChartCard
+      title="トークン使用量（直近30日）"
+      subtitle="サブエージェント分を含む。キャッシュ読込は右軸"
+      loading={loading}
+      error={error}
+      isEmpty={chartData.length === 0}
+    >
       <ResponsiveContainer width="100%" height={320}>
         <ComposedChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -40,6 +41,6 @@ export function TokenUsageChart() {
           <Line yAxisId="right" type="monotone" dataKey="cache_read_tokens" name="キャッシュ読込" stroke="#f59e0b" strokeWidth={2} dot={false} />
         </ComposedChart>
       </ResponsiveContainer>
-    </div>
+    </ChartCard>
   );
 }

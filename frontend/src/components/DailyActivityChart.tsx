@@ -3,18 +3,19 @@ import {
 } from 'recharts';
 import { useQuery } from '../hooks/useQuery';
 import type { DailyActivity } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 export function DailyActivityChart() {
-  const { data, loading } = useQuery<DailyActivity>('daily-activity');
-
-  if (loading) return <LoadingSpinner />;
-
+  const { data, loading, error } = useQuery<DailyActivity>('daily-activity');
   const chartData = [...data].reverse().slice(-30);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">日別アクティビティ（直近30日）</h2>
+    <ChartCard
+      title="日別アクティビティ（直近30日）"
+      loading={loading}
+      error={error}
+      isEmpty={chartData.length === 0}
+    >
       <ResponsiveContainer width="100%" height={320}>
         <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -33,6 +34,6 @@ export function DailyActivityChart() {
           <Bar dataKey="tool_uses" name="ツール使用" fill="#c7d2fe" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </ChartCard>
   );
 }

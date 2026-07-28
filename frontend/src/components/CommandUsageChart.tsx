@@ -3,18 +3,21 @@ import {
 } from 'recharts';
 import { useQuery } from '../hooks/useQuery';
 import type { CommandUsage } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 export function CommandUsageChart() {
-  const { data, loading } = useQuery<CommandUsage>('command-usage');
-
-  if (loading) return <LoadingSpinner />;
-
+  const { data, loading, error } = useQuery<CommandUsage>('command-usage');
   const chartData = data.slice(0, 15);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">スラッシュコマンド使用ランキング</h2>
+    <ChartCard
+      title="カスタムコマンド使用ランキング"
+      loading={loading}
+      error={error}
+      isEmpty={chartData.length === 0}
+      emptyMessage="カスタムコマンドの利用はまだありません（/exit などのビルトインは除外しています）。"
+      testId="command-usage-card"
+    >
       <ResponsiveContainer width="100%" height={400}>
         <BarChart data={chartData} layout="vertical" margin={{ left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -29,6 +32,6 @@ export function CommandUsageChart() {
           <Bar dataKey="usage_count" name="使用回数" fill="#10b981" radius={[0, 4, 4, 0]} />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </ChartCard>
   );
 }

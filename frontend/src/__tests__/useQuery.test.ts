@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useQuery } from '../hooks/useQuery';
 
 beforeEach(() => {
@@ -54,6 +54,86 @@ describe('useQuery', () => {
 
     expect(result.current.error).toBe('HTTP 404');
     expect(result.current.data).toEqual([]);
+  });
+
+  it('clears a previous error when refetching', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 500 } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ rows: [{ id: 1 }] }) } as Response);
+
+    const { result, rerender } = renderHook(
+      ({ name }) => useQuery<{ id: number }>(name),
+      { initialProps: { name: 'first-query' } },
+    );
+
+    await waitFor(() => expect(result.current.error).toBe('HTTP 500'));
+
+    rerender({ name: 'second-query' });
+
+    await waitFor(() => expect(result.current.data).toEqual([{ id: 1 }]));
+    expect(result.current.error).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats an unexpected response shape as an error', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ rows: [{ id: 1 }] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: false }) } as Response);
+
+    const { result, rerender } = renderHook(
+      ({ name }) => useQuery<{ id: number }>(name),
+      { initialProps: { name: 'first-query' } },
+    );
+
+    await waitFor(() => expect(result.current.data).toEqual([{ id: 1 }]));
+
+    rerender({ name: 'second-query' });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toEqual([]);
+    expect(result.current.error).toBe('Unexpected response shape');
+  });
+
+  it('surfaces the error message from a 200 error payload', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: false, error: 'no such column: foo' }),
+    } as Response);
+
+    const { result } = renderHook(() => useQuery<unknown>('broken-query'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBe('no such column: foo');
+  });
+
+  it('ignores a stale response that resolves after the query changed', async () => {
+    let resolveFirst!: (res: Response) => void;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(firstResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ rows: [{ id: 2 }] }),
+      } as Response);
+
+    const { result, rerender } = renderHook(
+      ({ name }) => useQuery<{ id: number }>(name),
+      { initialProps: { name: 'slow-query' } },
+    );
+
+    rerender({ name: 'fast-query' });
+    await waitFor(() => expect(result.current.data).toEqual([{ id: 2 }]));
+
+    resolveFirst({ ok: true, json: async () => ({ rows: [{ id: 1 }] }) } as Response);
+    // 遅れて解決した fetch が state に反映されうるまでイベントループを回す
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(result.current.data).toEqual([{ id: 2 }]);
   });
 
   it('handles array response format', async () => {

@@ -1,6 +1,6 @@
 import { useQuery } from '../hooks/useQuery';
 import type { ModelUsage } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 function formatTokens(v: number): string {
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
@@ -10,14 +10,16 @@ function formatTokens(v: number): string {
 }
 
 export function ModelUsageTable() {
-  const { data, loading } = useQuery<ModelUsage>('model-usage');
-
-  if (loading) return <LoadingSpinner />;
+  const { data, loading, error } = useQuery<ModelUsage>('model-usage');
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-1">モデル別利用状況</h2>
-      <p className="text-xs text-gray-400 mb-4">サブエージェント分を含む</p>
+    <ChartCard
+      title="モデル別利用状況"
+      subtitle="サブエージェント分を含む"
+      loading={loading}
+      error={error}
+      isEmpty={data.length === 0}
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -40,6 +42,6 @@ export function ModelUsageTable() {
           </tbody>
         </table>
       </div>
-    </div>
+    </ChartCard>
   );
 }

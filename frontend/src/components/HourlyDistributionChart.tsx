@@ -3,16 +3,18 @@ import {
 } from 'recharts';
 import { useQuery } from '../hooks/useQuery';
 import type { HourlyDistribution } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 export function HourlyDistributionChart() {
-  const { data, loading } = useQuery<HourlyDistribution>('hourly-distribution');
-
-  if (loading) return <LoadingSpinner />;
+  const { data, loading, error } = useQuery<HourlyDistribution>('hourly-distribution');
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">時間帯別メッセージ分布</h2>
+    <ChartCard
+      title="時間帯別メッセージ分布"
+      loading={loading}
+      error={error}
+      isEmpty={data.length === 0}
+    >
       <ResponsiveContainer width="100%" height={280}>
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -44,6 +46,6 @@ export function HourlyDistributionChart() {
           />
         </AreaChart>
       </ResponsiveContainer>
-    </div>
+    </ChartCard>
   );
 }

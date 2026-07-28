@@ -27,25 +27,33 @@ function duration(start: string, end: string): string {
   return `${hours}時間${mins % 60}分`;
 }
 
+function SessionUnavailable({ error }: { error: string | null }) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        {error ? (
+          <p className="text-red-600 mb-4">データを取得できませんでした（{error}）。</p>
+        ) : (
+          <p className="text-gray-500 mb-4">セッションが見つかりません</p>
+        )}
+        <Link to="/" className="text-indigo-600 hover:underline">← ダッシュボードに戻る</Link>
+      </div>
+    </div>
+  );
+}
+
 export function SessionDetail() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const params = { session_id: sessionId! };
-  const { data: sessions, loading: loadingDetail } = useQuery<SessionDetailType>('session-detail', params);
-  const { data: messages, loading: loadingMessages } = useQuery<SessionMessage>('session-messages', params);
+  const { data: sessions, loading: loadingDetail, error: detailError } = useQuery<SessionDetailType>('session-detail', params);
+  const { data: messages, loading: loadingMessages, error: messagesError } = useQuery<SessionMessage>('session-messages', params);
 
   if (loadingDetail || loadingMessages) return <LoadingSpinner />;
 
+  // 取得失敗を「セッションが見つかりません」と誤読させない
+  const error = detailError ?? messagesError;
   const session = sessions[0];
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500 mb-4">セッションが見つかりません</p>
-          <Link to="/" className="text-indigo-600 hover:underline">← ダッシュボードに戻る</Link>
-        </div>
-      </div>
-    );
-  }
+  if (error || !session) return <SessionUnavailable error={error} />;
 
   return (
     <div className="min-h-screen bg-gray-50">

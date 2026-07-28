@@ -114,7 +114,7 @@ export function MessageList({ messages }: { messages: SessionMessage[] }) {
   const rallies = groupRallies(messages);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="message-list">
       {rallies.map((rally, ri) => (
         <div key={ri} className="space-y-3">
           {rally.map((msg) =>

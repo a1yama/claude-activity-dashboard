@@ -1,6 +1,6 @@
 import { useQuery } from '../hooks/useQuery';
 import type { ProjectSummary as ProjectSummaryType } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '-';
@@ -9,13 +9,15 @@ function formatDate(iso: string | null): string {
 }
 
 export function ProjectSummary() {
-  const { data, loading } = useQuery<ProjectSummaryType>('project-summary');
-
-  if (loading) return <LoadingSpinner />;
+  const { data, loading, error } = useQuery<ProjectSummaryType>('project-summary');
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">プロジェクト別サマリー</h2>
+    <ChartCard
+      title="プロジェクト別サマリー"
+      loading={loading}
+      error={error}
+      isEmpty={data.length === 0}
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -40,6 +42,6 @@ export function ProjectSummary() {
           </tbody>
         </table>
       </div>
-    </div>
+    </ChartCard>
   );
 }

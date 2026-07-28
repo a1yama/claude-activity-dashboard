@@ -3,18 +3,19 @@ import {
 } from 'recharts';
 import { useQuery } from '../hooks/useQuery';
 import type { ToolUsage } from '../types/api';
-import { LoadingSpinner } from './LoadingSpinner';
+import { ChartCard } from './ChartCard';
 
 export function ToolUsageChart() {
-  const { data, loading } = useQuery<ToolUsage>('tool-usage');
-
-  if (loading) return <LoadingSpinner />;
-
+  const { data, loading, error } = useQuery<ToolUsage>('tool-usage');
   const chartData = data.slice(0, 15);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">ツール使用ランキング</h2>
+    <ChartCard
+      title="ツール使用ランキング"
+      loading={loading}
+      error={error}
+      isEmpty={chartData.length === 0}
+    >
       <ResponsiveContainer width="100%" height={400}>
         <BarChart data={chartData} layout="vertical" margin={{ left: 20 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -29,6 +30,6 @@ export function ToolUsageChart() {
           <Bar dataKey="usage_count" name="使用回数" fill="#6366f1" radius={[0, 4, 4, 0]} />
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </ChartCard>
   );
 }
