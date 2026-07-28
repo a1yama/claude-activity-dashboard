@@ -213,6 +213,173 @@ class TestExtractCommandName:
         assert extract_command_name([{"type": "text", "text": "hi"}]) == ""
 
 
+class TestDiscoverCustomCommands:
+    def _make_claude_dir(self, base, commands=(), skills=()):
+        for name in commands:
+            path = base / ".claude" / "commands" / f"{name}.md"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("cmd")
+        for name in skills:
+            path = base / ".claude" / "skills" / name / "SKILL.md"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("skill")
+        return base / ".claude"
+
+    def test_collects_commands_and_skills(self, tmp_path):
+        from ingest import collect_command_names
+        claude_dir = self._make_claude_dir(
+            tmp_path, commands=["Pipeline"], skills=["analyze-usage"]
+        )
+        assert collect_command_names(claude_dir) == {"pipeline", "analyze-usage"}
+
+    def test_missing_directory(self, tmp_path):
+        from ingest import collect_command_names
+        assert collect_command_names(tmp_path / "nope") == set()
+
+    def test_nested_commands_are_namespaced(self, tmp_path):
+        from ingest import collect_command_names
+        path = tmp_path / ".claude" / "commands" / "git" / "diff.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("cmd")
+        assert collect_command_names(tmp_path / ".claude") == {"git:diff"}
+
+    def test_plugin_commands_are_namespaced(self, tmp_path):
+        from ingest import collect_plugin_command_names
+        cmd = tmp_path / "marketplaces" / "mkt" / "plugins" / "codex" / "commands" / "rescue.md"
+        cmd.parent.mkdir(parents=True)
+        cmd.write_text("cmd")
+        skill = tmp_path / "marketplaces" / "mkt" / "plugins" / "slack" / "skills" / "standup" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("skill")
+        # スキルは <command-name>standup</command-name> のようにベア名でも記録される
+        assert collect_plugin_command_names(tmp_path) == {
+            "codex:rescue", "slack:standup", "standup",
+        }
+
+    def test_readme_is_not_a_command(self, tmp_path):
+        from ingest import collect_command_names
+        base = tmp_path / ".claude" / "commands"
+        base.mkdir(parents=True)
+        (base / "README.md").write_text("docs")
+        (base / "deploy.md").write_text("cmd")
+        assert collect_command_names(tmp_path / ".claude") == {"deploy"}
+
+    def test_plugin_name_comes_from_the_manifest(self, tmp_path):
+        import json
+        from ingest import collect_plugin_command_names
+        # cache 配下は <marketplace>/<plugin>/<version>/ でバージョンが親ディレクトリになる
+        root = tmp_path / "cache" / "openai-codex" / "codex" / "1.0.3"
+        (root / "commands").mkdir(parents=True)
+        (root / "commands" / "rescue.md").write_text("cmd")
+        (root / ".claude-plugin").mkdir()
+        (root / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "codex"}))
+        assert collect_plugin_command_names(tmp_path) == {"codex:rescue"}
+
+    def test_cached_plugin_without_manifest_uses_the_plugin_directory(self, tmp_path):
+        from ingest import collect_plugin_command_names
+        root = tmp_path / "cache" / "anthropic-agent-skills" / "example-skills" / "1f630fdf9259"
+        (root / "skills" / "canvas-design").mkdir(parents=True)
+        (root / "skills" / "canvas-design" / "SKILL.md").write_text("skill")
+        assert collect_plugin_command_names(tmp_path) == {
+            "example-skills:canvas-design", "canvas-design",
+        }
+
+    def test_plugin_name_falls_back_to_directory(self, tmp_path):
+        from ingest import collect_plugin_command_names
+        root = tmp_path / "repos" / "owner" / "myplugin"
+        (root / "commands").mkdir(parents=True)
+        (root / "commands" / "run.md").write_text("cmd")
+        assert collect_plugin_command_names(tmp_path) == {"myplugin:run"}
+
+    def test_nested_directories_are_not_plugin_roots(self, tmp_path):
+        from ingest import collect_plugin_command_names
+        # <plugin>/skills/<skill>/commands/ をプラグインルートと誤認しないこと
+        root = tmp_path / "marketplaces" / "mkt" / "plugins" / "codex"
+        nested = root / "skills" / "rescue" / "commands"
+        nested.mkdir(parents=True)
+        (nested / "inner.md").write_text("cmd")
+        (root / "skills" / "rescue" / "SKILL.md").write_text("skill")
+        assert collect_plugin_command_names(tmp_path) == {"codex:rescue", "rescue"}
+
+    def test_walks_up_from_a_subdirectory(self, tmp_path):
+        from ingest import discover_custom_commands
+        home = tmp_path / "home"
+        project = home / "work" / "proj"
+        (project / "frontend").mkdir(parents=True)
+        self._make_claude_dir(project, commands=["deploy"])
+        names = discover_custom_commands(
+            [str(project / "frontend")],
+            claude_home=home / ".claude",
+            plugins_dir=tmp_path / "no-plugins",
+        )
+        assert "deploy" in names
+
+    def test_scans_a_path_outside_the_boundary_without_walking_up(self, tmp_path):
+        from ingest import discover_custom_commands
+        outside = tmp_path / "volume" / "proj"
+        outside.mkdir(parents=True)
+        self._make_claude_dir(outside, commands=["external"])
+        self._make_claude_dir(tmp_path / "volume", commands=["parent-of-external"])
+        names = discover_custom_commands(
+            [str(outside)],
+            claude_home=tmp_path / "home" / ".claude",
+            plugins_dir=tmp_path / "no-plugins",
+        )
+        assert names == {"external"}
+
+    def test_stops_walking_up_at_the_boundary(self, tmp_path):
+        from ingest import discover_custom_commands
+        home = tmp_path / "home"
+        (home / "work").mkdir(parents=True)
+        self._make_claude_dir(home, commands=["home-only"])
+        names = discover_custom_commands(
+            [str(home / "work")],
+            claude_home=tmp_path / "empty" / ".claude",
+            plugins_dir=tmp_path / "no-plugins",
+            stop_at=home / "work",
+        )
+        assert names == set()
+
+
+class TestIsCustomCommand:
+    def test_builtin_is_not_custom(self):
+        from ingest import is_custom_command
+        assert is_custom_command("/exit", set()) is False
+
+    def test_unknown_command_falls_back_to_custom(self):
+        from ingest import is_custom_command
+        # 元ログもコマンド定義も残っていない過去データを取りこぼさない
+        assert is_custom_command("/pipeline", set()) is True
+
+    def test_allowlist_wins_over_builtin_name(self):
+        from ingest import is_custom_command
+        assert is_custom_command("/diff", {"diff"}) is True
+
+    def test_empty_name(self):
+        from ingest import is_custom_command
+        assert is_custom_command("", {"diff"}) is False
+
+
+class TestClassifyCommands:
+    def test_updates_existing_rows(self, tmp_path):
+        from ingest import classify_commands, init_db
+        conn = init_db(tmp_path / "t.db")
+        rows = [("m1", "/exit"), ("m2", "/pipeline"), ("m3", "/diff")]
+        conn.executemany(
+            """INSERT INTO messages
+               (uuid, session_id, type, timestamp, timestamp_jst, date_jst, hour_jst, command_name)
+               VALUES (?, 's1', 'user', '2026-03-01T00:00:00+09:00', '2026-03-01 00:00:00',
+                       '2026-03-01', 0, ?)""",
+            rows,
+        )
+        classify_commands(conn, {"diff"})
+        result = dict(
+            conn.execute("SELECT command_name, is_custom_command FROM messages")
+        )
+        assert result == {"/exit": 0, "/pipeline": 1, "/diff": 1}
+        conn.close()
+
+
 class TestCountToolErrors:
     def test_with_errors(self):
         from ingest import count_tool_errors

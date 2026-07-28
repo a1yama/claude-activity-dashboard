@@ -118,14 +118,18 @@ databases:
           GROUP BY model
           ORDER BY output_tokens DESC
       command-usage:
-        title: スラッシュコマンド使用ランキング
+        title: カスタムコマンド使用ランキング
         sql: |
+          -- is_custom_command は ingest 時に判定する（ingest.py の discover_custom_commands）。
+          -- /exit などのビルトインは利用傾向の示唆にならないため除外している。
           SELECT
             command_name,
             COUNT(*) AS usage_count,
             MAX(date_jst) AS last_used
           FROM messages
           WHERE command_name != ''
+            AND is_subagent = 0
+            AND is_custom_command = 1
           GROUP BY command_name
           ORDER BY usage_count DESC
           LIMIT 30

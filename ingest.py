@@ -8,7 +8,54 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 JST = timezone(timedelta(hours=9))
-CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+CLAUDE_HOME = Path.home() / ".claude"
+CLAUDE_PROJECTS_DIR = CLAUDE_HOME / "projects"
+CLAUDE_PLUGINS_DIR = CLAUDE_HOME / "plugins"
+
+# プラグイン本体の置き場。ツリー全体を走査すると skills/<skill>/commands のような
+# ネストをプラグインルートと誤認するため、実レイアウトを固定深さで列挙する
+PLUGIN_ROOT_PATTERNS = (
+    "marketplaces/*/plugins/*",
+    "marketplaces/*/external_plugins/*",
+    "cache/*/*/*",
+    "repos/*/*",
+)
+
+# コマンド定義が見つからなかったときのフォールバック判定に使う。
+# Claude Code 2.1.220 のバイナリからコマンド定義とエイリアスを抽出したもの。
+# 新しいビルトインが増えると「未知＝カスタム」と誤判定してランキングに混ざるため、
+# Claude Code を大きく更新したら以下で差分を確認して追記する:
+#   BIN=~/.local/share/claude/versions/<version>
+#   grep -aoE 'type:"(local|local-jsx|prompt)",name:"[a-z][a-z0-9:_-]{1,30}"' "$BIN" \
+#     | sed -E 's/.*name:"([^"]+)"/\1/' | sort -u
+#   grep -aoE 'name:"[a-z][a-z0-9:_-]{1,30}",aliases:\[[^]]*\]' "$BIN" | sort -u
+BUILTIN_COMMANDS = frozenset({
+    "add-dir", "advisor", "agents", "allowed-tools", "android", "app",
+    "artifacts", "auto-mode-setup", "autocompact", "autofix-pr",
+    "background", "bashes", "bg", "branch", "break-reminder", "breaks",
+    "brief", "btw", "bug", "cd", "clear", "color", "compact", "config",
+    "context", "copy", "cost", "daemon", "design", "design-consent",
+    "design-login", "design-revoke", "desktop", "diff", "doctor",
+    "downtime", "effort", "exit", "export", "extra-usage", "fast",
+    "feedback", "focus", "fork", "goal", "heapdump", "help", "hooks", "ide",
+    "import", "init", "insights", "install", "install-github-app",
+    "install-slack-app", "ios", "keybindings", "login", "logout", "loop",
+    "loops", "marketplace", "mcp", "memory", "memory-pause", "mobile",
+    "model", "name", "output-style", "passes", "pause-memory",
+    "permissions", "plan", "plugin", "plugins", "powerup", "pr-comments",
+    "privacy-settings", "pro-trial-expired", "quit", "radio",
+    "rate-limit-options", "rc", "recap", "release-notes", "reload-plugins",
+    "reload-skills", "remote", "remote-control", "remote-env", "rename",
+    "restart", "resume", "review", "rewind", "sandbox", "schedule",
+    "scroll-speed", "security-review", "session", "settings",
+    "setup-bedrock", "setup-vertex", "skill-doctor", "skills", "stats",
+    "status", "statusline", "stickers", "stop", "subtask", "tasks",
+    "team-onboarding", "teleport", "terminal-setup", "theme", "todos",
+    "toggle-memory", "tp", "tui", "ultraplan", "ultrareview", "update",
+    "upgrade", "usage", "usage-credits", "version", "vim", "voice",
+    "web-setup", "wellbeing", "workflow-launch-exec", "workflows",
+    "worktree",
+})
 
 
 def extract_project_name(dir_name: str) -> str:
@@ -112,6 +159,132 @@ def count_tool_errors(content) -> int:
     )
 
 
+def normalize_command_name(name: str) -> str:
+    return name.strip().lstrip("/").lower()
+
+
+def split_command_names(base_dir: Path) -> tuple[set[str], set[str]]:
+    """Collect (commands, skills) names from a commands/ + skills/ pair.
+
+    commands/ のサブディレクトリは名前空間になる（commands/git/diff.md → /git:diff）。
+    commands/ 直下の .md はすべてコマンド定義とみなす（README.md などは除く）。
+    """
+    commands = set()
+    commands_dir = base_dir / "commands"
+    for path in commands_dir.rglob("*.md"):
+        if path.stem.upper() == "README":
+            continue
+        parts = path.relative_to(commands_dir).with_suffix("").parts
+        commands.add(normalize_command_name(":".join(parts)))
+    skills = {
+        normalize_command_name(path.parent.name)
+        for path in (base_dir / "skills").glob("*/SKILL.md")
+    }
+    return commands, skills
+
+
+def collect_command_names(base_dir: Path) -> set[str]:
+    commands, skills = split_command_names(base_dir)
+    return commands | skills
+
+
+def read_plugin_name(plugin_root: Path, plugins_dir: Path | None = None) -> str:
+    """プラグイン名はディレクトリ名とは限らない（cache 配下はバージョン名になる）。"""
+    manifest = plugin_root / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):  # 壊れた/非UTF-8の plugin.json で ingest 全体を落とさない
+        data = None
+    name = data.get("name") if isinstance(data, dict) else None
+    if name:
+        return name
+    if plugins_dir is not None:
+        # cache/<marketplace>/<plugin>/<version> は plugin.json が無いことがある
+        try:
+            parts = plugin_root.relative_to(plugins_dir).parts
+        except ValueError:
+            parts = ()
+        if len(parts) == 4 and parts[0] == "cache":
+            return parts[2]
+    return plugin_root.name
+
+
+def collect_plugin_command_names(plugins_dir: Path) -> set[str]:
+    """Collect plugin command names.
+
+    コマンドは /<plugin>:<name> で呼ばれるが、スキルはベア名でログに残ることがあるため
+    両方の形式で登録する。
+    """
+    roots = {
+        path
+        for pattern in PLUGIN_ROOT_PATTERNS
+        for path in plugins_dir.glob(pattern)
+        if path.is_dir()
+    }
+    names = set()
+    for root in roots:
+        plugin = normalize_command_name(read_plugin_name(root, plugins_dir))
+        commands, skills = split_command_names(root)
+        names |= {f"{plugin}:{name}" for name in commands | skills}
+        names |= skills
+    return names
+
+
+def discover_custom_commands(
+    project_paths,
+    claude_home: Path = CLAUDE_HOME,
+    plugins_dir: Path | None = None,
+    stop_at: Path | None = None,
+) -> set[str]:
+    """Build the allowlist of user-defined commands from the filesystem.
+
+    プロジェクト単位ではなく全体の和集合で持つ。個人用ダッシュボードなので
+    「そのコマンドを自分で定義したことがあるか」が分かれば足りる。
+    stop_at は project_paths を遡るときの打ち切り境界（既定はホームディレクトリ）。
+    """
+    boundary = stop_at if stop_at is not None else claude_home.parent
+    names = collect_command_names(claude_home)
+    visited: set[Path] = set()
+    for path in project_paths:
+        # ログの cwd はサブディレクトリのこともあるので、境界まで遡って .claude を探す
+        current = Path(path)
+        while current not in visited:
+            visited.add(current)
+            names |= collect_command_names(current / ".claude")
+            # 境界の外（ホーム外の作業ディレクトリなど）へは遡らない
+            if current == current.parent or not current.parent.is_relative_to(boundary):
+                break
+            current = current.parent
+    names |= collect_plugin_command_names(
+        plugins_dir if plugins_dir is not None else claude_home / "plugins"
+    )
+    return names
+
+
+def classify_commands(conn: sqlite3.Connection, known_commands: set[str]):
+    """既存行も含めて分類し直す。元ログが消えたセッションの行も判定を保てる。"""
+    names = [
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT command_name FROM messages WHERE command_name != ''"
+        )
+    ]
+    conn.executemany(
+        "UPDATE messages SET is_custom_command = ? WHERE command_name = ?",
+        [(1 if is_custom_command(n, known_commands) else 0, n) for n in names],
+    )
+
+
+def is_custom_command(name: str, known_commands: set[str]) -> bool:
+    """Classify a slash command, falling back to the builtin list when unresolved."""
+    key = normalize_command_name(name)
+    if not key:
+        return False
+    if key in known_commands:
+        return True
+    return key not in BUILTIN_COMMANDS
+
+
 def extract_usage(message: dict) -> tuple[int, int, int, int]:
     """Extract (input, output, cache_creation, cache_read) token counts from assistant message."""
     u = message.get("usage") or {}
@@ -134,6 +307,7 @@ MESSAGES_EXTRA_COLUMNS = {
     "command_name": "TEXT DEFAULT ''",
     "error_count": "INTEGER DEFAULT 0",
     "is_subagent": "INTEGER DEFAULT 0",
+    "is_custom_command": "INTEGER DEFAULT 0",
 }
 
 
@@ -196,6 +370,10 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         );
     """)
     _ensure_columns(conn, "messages", MESSAGES_EXTRA_COLUMNS)
+    # command_name は ALTER で後付けするため、列を追加してからインデックスを張る
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_command ON messages(command_name)"
+    )
     return conn
 
 
@@ -206,6 +384,7 @@ def ingest_session(
     project_name: str,
     session_id: str | None = None,
     is_subagent: bool = False,
+    cwds: set[str] | None = None,
 ):
     # サブエージェントは親セッションの session_id に紐付けて messages のみ取り込み、
     # sessions の統計（メインスレッドの集計）は上書きしない
@@ -228,6 +407,9 @@ def ingest_session(
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
+
+            if cwds is not None and record.get("cwd"):
+                cwds.add(record["cwd"])
 
             msg_type = record.get("type", "")
             if msg_type in ("file-history-snapshot", "progress"):
@@ -340,6 +522,7 @@ def ingest_all(db_path: Path):
 
     conn = init_db(db_path)
     total_sessions = 0
+    cwds: set[str] = set()
 
     for project_dir in sorted(CLAUDE_PROJECTS_DIR.iterdir()):
         if not project_dir.is_dir():
@@ -350,7 +533,7 @@ def ingest_all(db_path: Path):
             # Skip subagent logs
             if "subagents" in str(jsonl_path):
                 continue
-            ingest_session(conn, jsonl_path, project_dir.name, project_name)
+            ingest_session(conn, jsonl_path, project_dir.name, project_name, cwds=cwds)
             total_sessions += 1
 
             # サブエージェントログ (<session_id>/subagents/*.jsonl) を親セッションに紐付けて取り込む
@@ -358,9 +541,10 @@ def ingest_all(db_path: Path):
             for sub_path in sorted(subagents_dir.glob("*.jsonl")):
                 ingest_session(
                     conn, sub_path, project_dir.name, project_name,
-                    session_id=jsonl_path.stem, is_subagent=True,
+                    session_id=jsonl_path.stem, is_subagent=True, cwds=cwds,
                 )
 
+    classify_commands(conn, discover_custom_commands(cwds))
     conn.commit()
     conn.close()
     print(f"Ingested {total_sessions} sessions into {db_path}")

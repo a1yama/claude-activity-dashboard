@@ -62,10 +62,12 @@ test.describe("ダッシュボードページ", () => {
     await expect(page.getByText("claude-fable-5")).toBeVisible();
   });
 
-  test("スラッシュコマンド使用ランキングが表示される", async ({ page }) => {
-    await expect(
-      page.getByText("スラッシュコマンド使用ランキング")
-    ).toBeVisible();
+  test("カスタムコマンド使用ランキングにビルトインが含まれない", async ({ page }) => {
+    // カード外の要素で否定アサーションが空振りしないようスコープを切る
+    const card = page.getByTestId("command-usage-card");
+    await expect(card.getByText("カスタムコマンド使用ランキング")).toBeVisible();
+    await expect(card.getByText("/analyze-usage")).toBeVisible();
+    await expect(card.getByText("/exit")).toHaveCount(0);
   });
 
   test("セッション開始時刻がJSTで表示される", async ({ page }) => {

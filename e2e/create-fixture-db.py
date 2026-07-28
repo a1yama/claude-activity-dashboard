@@ -6,7 +6,7 @@ from pathlib import Path
 # Add project root to path so we can import init_db from ingest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ingest import init_db
+from ingest import classify_commands, init_db
 
 FIXTURE_DB_PATH = Path(__file__).resolve().parent / "fixtures" / "claude_activity.db"
 
@@ -16,8 +16,10 @@ SESSION_2_ID = "e2e-test-session-002"
 
 def create_fixture_db():
     FIXTURE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if FIXTURE_DB_PATH.exists():
-        FIXTURE_DB_PATH.unlink()
+    # WAL モードのサイドカーが残ると、作り直した DB を古い WAL 付きで開くことになる
+    for suffix in ("", "-wal", "-shm"):
+        path = FIXTURE_DB_PATH.with_name(FIXTURE_DB_PATH.name + suffix)
+        path.unlink(missing_ok=True)
 
     conn = init_db(FIXTURE_DB_PATH)
 
@@ -218,6 +220,18 @@ def create_fixture_db():
                 '2026-03-02 14:10:00', '2026-03-02', 14, '', '/analyze-usage')""",
         (SESSION_2_ID,),
     )
+    # ビルトイン除外フィルタの回帰を e2e で検出するためのノイズ行
+    conn.execute(
+        """INSERT INTO messages
+        (uuid, session_id, type, timestamp, timestamp_jst, date_jst, hour_jst,
+         content_preview, command_name)
+        VALUES ('msg-010', ?, 'user', '2026-03-02T14:20:00+09:00',
+                '2026-03-02 14:20:00', '2026-03-02', 14, '', '/exit')""",
+        (SESSION_2_ID,),
+    )
+
+    # is_custom_command は本番と同じ分類ロジックで埋める（フィクスチャで手書きしない）
+    classify_commands(conn, {"analyze-usage"})
 
     conn.commit()
     conn.close()
