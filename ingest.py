@@ -58,8 +58,70 @@ BUILTIN_COMMANDS = frozenset({
 })
 
 
+def encode_project_dir(path: str) -> str:
+    """Claude Code のログディレクトリ名（絶対パスの / と . を - に置換した形）を作る。"""
+    return re.sub(r"[/.]", "-", path)
+
+
+def resolve_project_path(cwd: str, project_dir: str) -> str | None:
+    """cwd の祖先から、ログのディレクトリ名と一致するプロジェクトルートを探す。
+
+    ディレクトリ名は区切り文字を潰していて一意に戻せない
+    （-a-b が a/b とも a-b とも読める）ため、実パスと突き合わせて確定させる。
+    """
+    current = Path(cwd)
+    for candidate in (current, *current.parents):
+        if encode_project_dir(str(candidate)) == project_dir:
+            return str(candidate)
+    return None
+
+
+def format_project_name(path: str, home: Path | None = None) -> str:
+    """ホーム基準の短いパスにする（/Users/me/ghq/x/y → ghq/x/y）。"""
+    home = home if home is not None else Path.home()
+    target = Path(path)
+    if target == home:
+        return "~"
+    if target.is_relative_to(home):
+        return str(target.relative_to(home))
+    return str(target).lstrip("/")
+
+
+def build_project_path_index(cwds) -> dict[str, str]:
+    """ログの cwd 群から「ログディレクトリ名 → 実パス」の逆引き表を作る。"""
+    index = {}
+    for cwd in cwds:
+        current = Path(cwd)
+        for candidate in (current, *current.parents):
+            index.setdefault(encode_project_dir(str(candidate)), str(candidate))
+    return index
+
+
+def backfill_project_names(
+    conn: sqlite3.Connection, index: dict[str, str], home: Path | None = None
+) -> int:
+    """元ログが消えて再取り込みできない既存行のプロジェクト名を補正する。"""
+    rows = conn.execute(
+        "SELECT DISTINCT project_dir FROM sessions WHERE project_path = ''"
+    ).fetchall()
+    updates = [
+        (index[project_dir], format_project_name(index[project_dir], home), project_dir)
+        for (project_dir,) in rows
+        if project_dir in index
+    ]
+    conn.executemany(
+        "UPDATE sessions SET project_path = ?, project_name = ? WHERE project_dir = ?",
+        updates,
+    )
+    return len(updates)
+
+
 def extract_project_name(dir_name: str) -> str:
-    """Convert directory name like '-Users-a1yama-ghq-github-com-foo-bar' to readable name."""
+    """Convert directory name like '-Users-a1yama-ghq-github-com-foo-bar' to readable name.
+
+    cwd が取れない古いログ向けのフォールバック。区切り文字を復元しきれず
+    ハイフンを含むディレクトリ名は分割されてしまう。
+    """
     parts = dir_name.lstrip("-").split("-")
     # Skip user home prefix (Users/username)
     try:
@@ -297,6 +359,17 @@ def extract_usage(message: dict) -> tuple[int, int, int, int]:
 
 
 # 過去に ingest 済みの DB にも列を追加できるよう、CREATE TABLE とは別に管理する
+SESSIONS_EXTRA_COLUMNS = {
+    "project_path": "TEXT DEFAULT ''",
+}
+
+# 提案の採否は本番では記録できない（サーバの DB は読み取り専用マウント）ため、
+# Mac 側で scripts/proposal-status.py が更新し make sync で反映する
+PROPOSALS_EXTRA_COLUMNS = {
+    "status": "TEXT DEFAULT 'open'",
+    "decided_at": "TEXT DEFAULT ''",
+}
+
 MESSAGES_EXTRA_COLUMNS = {
     "model": "TEXT DEFAULT ''",
     "stop_reason": "TEXT DEFAULT ''",
@@ -369,7 +442,9 @@ def init_db(db_path: Path) -> sqlite3.Connection:
             target_file TEXT DEFAULT ''
         );
     """)
+    _ensure_columns(conn, "sessions", SESSIONS_EXTRA_COLUMNS)
     _ensure_columns(conn, "messages", MESSAGES_EXTRA_COLUMNS)
+    _ensure_columns(conn, "improvement_proposals", PROPOSALS_EXTRA_COLUMNS)
     # command_name は ALTER で後付けするため、列を追加してからインデックスを張る
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_messages_command ON messages(command_name)"
@@ -391,6 +466,7 @@ def ingest_session(
     if session_id is None:
         session_id = jsonl_path.stem
     messages = []
+    session_cwd = None
     first_ts = None
     last_ts = None
     user_count = 0
@@ -408,8 +484,11 @@ def ingest_session(
             except json.JSONDecodeError:
                 continue
 
-            if cwds is not None and record.get("cwd"):
-                cwds.add(record["cwd"])
+            if record.get("cwd"):
+                if cwds is not None:
+                    cwds.add(record["cwd"])
+                if session_cwd is None:
+                    session_cwd = record["cwd"]
 
             msg_type = record.get("type", "")
             if msg_type in ("file-history-snapshot", "progress"):
@@ -489,15 +568,21 @@ def ingest_session(
     if not messages:
         return
 
+    # ディレクトリ名からの復元はハイフンを含む名前を壊すので、cwd が取れれば実パスを優先する
+    project_path = resolve_project_path(session_cwd, project_dir) if session_cwd else None
+    if project_path:
+        project_name = format_project_name(project_path)
+
     if not is_subagent:
         # Upsert session
         conn.execute("""
             INSERT OR REPLACE INTO sessions
-            (session_id, project_dir, project_name, first_message_at, last_message_at,
+            (session_id, project_dir, project_name, project_path,
+             first_message_at, last_message_at,
              message_count, user_message_count, assistant_message_count, tool_use_count, claude_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            session_id, project_dir, project_name,
+            session_id, project_dir, project_name, project_path or "",
             first_ts.isoformat() if first_ts else None,
             last_ts.isoformat() if last_ts else None,
             len(messages), user_count, assistant_count, tool_count, version,
@@ -545,6 +630,7 @@ def ingest_all(db_path: Path):
                 )
 
     classify_commands(conn, discover_custom_commands(cwds))
+    backfill_project_names(conn, build_project_path_index(cwds))
     conn.commit()
     conn.close()
     print(f"Ingested {total_sessions} sessions into {db_path}")

@@ -213,6 +213,70 @@ class TestExtractCommandName:
         assert extract_command_name([{"type": "text", "text": "hi"}]) == ""
 
 
+class TestResolveProjectPath:
+    def test_hyphenated_repository_name(self):
+        from ingest import resolve_project_path
+        cwd = "/Users/a1yama/ghq/github.com/a1yama/claude-activity-dashboard"
+        dir_name = "-Users-a1yama-ghq-github-com-a1yama-claude-activity-dashboard"
+        assert resolve_project_path(cwd, dir_name) == cwd
+
+    def test_subdirectory_walks_up_to_the_project_root(self):
+        from ingest import resolve_project_path
+        root = "/Users/a1yama/ghq/github.com/a1yama/media-pipeline"
+        dir_name = "-Users-a1yama-ghq-github-com-a1yama-media-pipeline"
+        assert resolve_project_path(f"{root}/frontend/src", dir_name) == root
+
+    def test_unrelated_cwd(self):
+        from ingest import resolve_project_path
+        assert resolve_project_path("/tmp/other", "-Users-a1yama-foo") is None
+
+
+class TestFormatProjectName:
+    def test_relative_to_home(self):
+        from ingest import format_project_name
+        name = format_project_name(
+            "/Users/a1yama/ghq/github.com/a1yama/claude-activity-dashboard",
+            Path("/Users/a1yama"),
+        )
+        assert name == "ghq/github.com/a1yama/claude-activity-dashboard"
+
+    def test_home_itself(self):
+        from ingest import format_project_name
+        assert format_project_name("/Users/a1yama", Path("/Users/a1yama")) == "~"
+
+    def test_outside_home(self):
+        from ingest import format_project_name
+        assert format_project_name("/srv/app", Path("/Users/a1yama")) == "srv/app"
+
+
+class TestBackfillProjectNames:
+    def test_fixes_rows_whose_logs_are_gone(self, tmp_path):
+        from ingest import backfill_project_names, build_project_path_index, init_db
+        conn = init_db(tmp_path / "t.db")
+        conn.execute(
+            """INSERT INTO sessions (session_id, project_dir, project_name, project_path)
+               VALUES ('s1', '-Users-me-work-my-app', 'work/my/app', '')"""
+        )
+        index = build_project_path_index(["/Users/me/work/my-app/src"])
+        assert backfill_project_names(conn, index, home=Path("/Users/me")) == 1
+        row = conn.execute(
+            "SELECT project_name, project_path FROM sessions"
+        ).fetchone()
+        assert row == ("work/my-app", "/Users/me/work/my-app")
+        conn.close()
+
+    def test_leaves_unresolvable_rows_alone(self, tmp_path):
+        from ingest import backfill_project_names, build_project_path_index, init_db
+        conn = init_db(tmp_path / "t.db")
+        conn.execute(
+            """INSERT INTO sessions (session_id, project_dir, project_name, project_path)
+               VALUES ('s1', '-gone-forever', 'gone/forever', '')"""
+        )
+        assert backfill_project_names(conn, build_project_path_index([])) == 0
+        assert conn.execute("SELECT project_name FROM sessions").fetchone()[0] == "gone/forever"
+        conn.close()
+
+
 class TestDiscoverCustomCommands:
     def _make_claude_dir(self, base, commands=(), skills=()):
         for name in commands:
