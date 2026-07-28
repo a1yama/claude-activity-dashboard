@@ -21,15 +21,14 @@ make build          # フロントエンドビルド
 コード変更後は以下のテストを実行して確認すること。
 
 ```bash
-# フロントエンドユニットテスト
-cd frontend && npm test
-
-# E2Eテスト（Playwright）
-make test-e2e
-
-# Python テスト
-.venv/bin/pytest
+make test           # ユニットテスト（Python + フロントエンド）
+make test-py        # Python のみ
+make test-front     # フロントエンドのみ
+make test-e2e       # E2Eテスト（Playwright）
 ```
+
+Python テストは venv 外の `pytest` でも実行される（Stop hook の品質ゲート）ため、
+テストコードは標準ライブラリだけで動くようにする。
 
 ### E2Eテストについて
 

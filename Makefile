@@ -1,4 +1,4 @@
-.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test-e2e sync proposals
+.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test test-py test-front test-e2e sync proposals
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -39,6 +39,15 @@ serve: ingest
 
 serve-only:
 	$(DATASETTE) serve $(DB) --metadata metadata.yml --plugins-dir plugins/ --port 8765 --open
+
+# Unit tests (Python + frontend)
+test: test-py test-front
+
+test-py:
+	$(VENV)/bin/pytest
+
+test-front:
+	cd frontend && npm test
 
 # E2E tests: create fixture DB and run Playwright
 test-e2e:

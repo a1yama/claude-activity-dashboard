@@ -6,7 +6,11 @@ build/
 .venv/
 data/
 *.db
+*.db-wal
+*.db-shm
 node_modules/
 static/
 test-results/
 playwright-report/
+.takt/
+takt-prompt.md
