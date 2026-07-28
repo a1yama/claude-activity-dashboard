@@ -449,6 +449,10 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_messages_command ON messages(command_name)"
     )
+    # セッションの冒頭メッセージ（recent-sessions の summary）を時系列で引くため
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_session_ts ON messages(session_id, timestamp)"
+    )
     return conn
 
 

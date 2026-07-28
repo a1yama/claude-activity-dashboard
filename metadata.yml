@@ -172,11 +172,26 @@ databases:
         sql: |
           -- summary は最初の実質的なユーザー発話。プロジェクト名と時刻だけでは
           -- 目当てのセッションを探せないため、何をしていたかを1行で添える。
+          -- 先に 50 件へ絞ってから引く（全セッションに対して評価すると桁違いに遅い）。
+          WITH recent AS (
+            SELECT
+              session_id,
+              project_name,
+              first_message_at AS started,
+              last_message_at AS ended,
+              message_count,
+              user_message_count,
+              tool_use_count,
+              claude_version
+            FROM sessions
+            ORDER BY last_message_at DESC
+            LIMIT 50
+          )
           SELECT
             s.session_id,
             s.project_name,
-            s.first_message_at AS started,
-            s.last_message_at AS ended,
+            s.started,
+            s.ended,
             s.message_count,
             s.user_message_count,
             s.tool_use_count,
@@ -195,6 +210,5 @@ databases:
               ORDER BY m.timestamp
               LIMIT 1
             ) AS summary
-          FROM sessions s
-          ORDER BY s.last_message_at DESC
-          LIMIT 50
+          FROM recent s
+          ORDER BY s.ended DESC
