@@ -12,12 +12,18 @@ export interface DailyActivity {
   tool_uses: number;
 }
 
-export interface ProjectSummary {
-  project_name: string;
+export interface OverallTotals {
   total_sessions: number;
   total_user_messages: number;
   total_tool_uses: number;
-  first_used: string;
+}
+
+export interface ProjectSummary {
+  project_name: string;
+  sessions: number;
+  active_hours: number;
+  tokens: number;
+  errors_per_session: number;
   last_used: string;
 }
 
@@ -101,6 +107,7 @@ export interface RecentSession {
   project_name: string;
   started: string;
   ended: string;
+  active_minutes: number;
   message_count: number;
   user_message_count: number;
   tool_use_count: number;

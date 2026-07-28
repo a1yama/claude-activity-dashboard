@@ -18,13 +18,11 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
-function duration(start: string | null, end: string | null): string {
-  if (!start || !end) return '-';
-  const ms = parseDate(end).getTime() - parseDate(start).getTime();
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return `${mins}分`;
-  const hours = Math.floor(mins / 60);
-  return `${hours}時間${mins % 60}分`;
+// 最初〜最後の実時間は放置で桁違いに膨らむため、放置を除いた作業時間を出す
+function activeTime(minutes: number): string {
+  if (!minutes) return '-';
+  if (minutes < 60) return `${minutes}分`;
+  return `${Math.floor(minutes / 60)}時間${minutes % 60}分`;
 }
 
 export function RecentSessions() {
@@ -43,7 +41,7 @@ export function RecentSessions() {
             <tr className="border-b border-gray-100">
               <th className="text-left py-3 px-2 font-medium text-gray-500">プロジェクト / 概要</th>
               <th className="text-right py-3 px-2 font-medium text-gray-500">開始</th>
-              <th className="text-right py-3 px-2 font-medium text-gray-500">所要時間</th>
+              <th className="text-right py-3 px-2 font-medium text-gray-500">作業時間</th>
               <th className="text-right py-3 px-2 font-medium text-gray-500">メッセージ</th>
               <th className="text-right py-3 px-2 font-medium text-gray-500">ツール</th>
             </tr>
@@ -63,7 +61,7 @@ export function RecentSessions() {
                     )}
                   </td>
                   <td className="text-right py-3 px-2 text-gray-500 whitespace-nowrap">{formatDateTime(s.started)}</td>
-                  <td className="text-right py-3 px-2 tabular-nums whitespace-nowrap">{duration(s.started, s.ended)}</td>
+                  <td className="text-right py-3 px-2 tabular-nums whitespace-nowrap">{activeTime(s.active_minutes)}</td>
                   <td className="text-right py-3 px-2 tabular-nums">{s.message_count}</td>
                   <td className="text-right py-3 px-2 tabular-nums">{s.tool_use_count}</td>
                 </tr>

@@ -1,17 +1,29 @@
 """Create a fixture SQLite database for E2E tests with known data."""
 
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Add project root to path so we can import init_db from ingest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ingest import classify_commands, init_db
+from ingest import classify_commands, init_db, update_active_minutes
 
 FIXTURE_DB_PATH = Path(__file__).resolve().parent / "fixtures" / "claude_activity.db"
 
 SESSION_1_ID = "e2e-test-session-001"
 SESSION_2_ID = "e2e-test-session-002"
+# プロジェクト別サマリーは直近30日で絞るため、このセッションだけ実行時刻を基準にする
+SESSION_3_ID = "e2e-test-session-003"
+JST = timezone(timedelta(hours=9))
+
+
+# 呼ぶたびに now() を取ると間隔が閾値をわずかに超え、作業時間の期待値がぶれる
+_BASE_TIME = datetime.now(timezone.utc)
+
+
+def recent_time(minutes_ago: int) -> str:
+    return (_BASE_TIME - timedelta(minutes=minutes_ago)).isoformat()
 
 
 def create_fixture_db():
@@ -230,8 +242,43 @@ def create_fixture_db():
         (SESSION_2_ID,),
     )
 
+    # Session 3: 直近30日のカード（プロジェクト別サマリー）に出るセッション。
+    # 10分の作業 → 約3時間の放置 → 10分の作業 で、実時間 3時間20分に対し作業時間は 20 分になる。
+    # julianday の丸め誤差で境界がぶれるため、閾値ちょうど（15分）は避ける。
+    conn.execute(
+        """INSERT INTO sessions
+        (session_id, project_dir, project_name, first_message_at, last_message_at,
+         message_count, user_message_count, assistant_message_count, tool_use_count, claude_version)
+        VALUES (?, ?, ?, ?, ?, 4, 2, 2, 1, 'claude-opus-4-6')""",
+        (
+            SESSION_3_ID,
+            "/Users/test/ghq/github.com/test/recent-project",
+            "ghq/github.com/test/recent-project",
+            recent_time(200),
+            recent_time(0),
+        ),
+    )
+    conn.executemany(
+        """INSERT INTO messages
+        (uuid, session_id, type, timestamp, timestamp_jst, date_jst, hour_jst,
+         content_preview, error_count, output_tokens)
+        VALUES (?, ?, ?, ?, '', ?, 0, ?, ?, ?)""",
+        [
+            (f"msg-10{i}", SESSION_3_ID, msg_type, recent_time(offset),
+             datetime.now(JST).strftime("%Y-%m-%d"), preview, errors, tokens)
+            for i, (msg_type, offset, preview, errors, tokens) in enumerate([
+                ("user", 200, "直近のセッションです", 0, 0),
+                ("assistant", 190, "", 0, 1000),
+                ("user", 10, "続きをお願いします", 2, 0),
+                ("assistant", 0, "", 0, 500),
+            ])
+        ],
+    )
+
     # is_custom_command は本番と同じ分類ロジックで埋める（フィクスチャで手書きしない）
     classify_commands(conn, {"analyze-usage"})
+    # active_minutes も本番と同じ計算で埋める
+    update_active_minutes(conn)
 
     # 改善候補（未対応と却下済みを1件ずつ）
     conn.executemany(

@@ -12,6 +12,11 @@ CLAUDE_HOME = Path.home() / ".claude"
 CLAUDE_PROJECTS_DIR = CLAUDE_HOME / "projects"
 CLAUDE_PLUGINS_DIR = CLAUDE_HOME / "plugins"
 
+# 実時間（最初〜最後）は放置で桁違いに膨らむため、連続メッセージ間がこの分数以内の
+# ぶんだけを足して「実際に手を動かしていた時間」とみなす。
+# 実データではギャップの 96.8% が1分以内で、閾値を 5〜30 分にしても結果はほぼ変わらない。
+ACTIVE_GAP_LIMIT_MINUTES = 15
+
 # プラグイン本体の置き場。ツリー全体を走査すると skills/<skill>/commands のような
 # ネストをプラグインルートと誤認するため、実レイアウトを固定深さで列挙する
 PLUGIN_ROOT_PATTERNS = (
@@ -323,6 +328,38 @@ def discover_custom_commands(
     return names
 
 
+def update_active_minutes(
+    conn: sqlite3.Connection, gap_limit: int = ACTIVE_GAP_LIMIT_MINUTES
+) -> int:
+    """セッションごとの作業時間を計算して保存する。
+
+    ダッシュボードのクエリで毎回計算すると Datasette の SQL 時間制限を超えるため、
+    取り込み時に1回だけ計算する。
+    """
+    rows = conn.execute(
+        """
+        WITH gaps AS (
+            SELECT
+                session_id,
+                (julianday(timestamp) - julianday(
+                    LAG(timestamp) OVER (PARTITION BY session_id ORDER BY timestamp)
+                )) * 1440 AS gap_min
+            FROM messages
+            WHERE is_subagent = 0
+        )
+        SELECT session_id, SUM(CASE WHEN gap_min <= ? THEN gap_min ELSE 0 END)
+        FROM gaps
+        GROUP BY session_id
+        """,
+        (gap_limit,),
+    ).fetchall()
+    conn.executemany(
+        "UPDATE sessions SET active_minutes = ? WHERE session_id = ?",
+        [(round(minutes or 0), session_id) for session_id, minutes in rows],
+    )
+    return len(rows)
+
+
 def classify_commands(conn: sqlite3.Connection, known_commands: set[str]):
     """既存行も含めて分類し直す。元ログが消えたセッションの行も判定を保てる。"""
     names = [
@@ -361,6 +398,7 @@ def extract_usage(message: dict) -> tuple[int, int, int, int]:
 # 過去に ingest 済みの DB にも列を追加できるよう、CREATE TABLE とは別に管理する
 SESSIONS_EXTRA_COLUMNS = {
     "project_path": "TEXT DEFAULT ''",
+    "active_minutes": "INTEGER DEFAULT 0",
 }
 
 # 提案の採否は本番では記録できない（サーバの DB は読み取り専用マウント）ため、
@@ -635,6 +673,7 @@ def ingest_all(db_path: Path):
 
     classify_commands(conn, discover_custom_commands(cwds))
     backfill_project_names(conn, build_project_path_index(cwds))
+    update_active_minutes(conn)
     conn.commit()
     conn.close()
     print(f"Ingested {total_sessions} sessions into {db_path}")

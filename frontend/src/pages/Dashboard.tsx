@@ -9,7 +9,7 @@ import { ProjectSummary } from '../components/ProjectSummary';
 import { ImprovementProposals } from '../components/ImprovementProposals';
 import { RecentSessions } from '../components/RecentSessions';
 import { useQuery } from '../hooks/useQuery';
-import type { DailyActivity, ProjectSummary as ProjectSummaryType } from '../types/api';
+import type { DailyActivity, OverallTotals } from '../types/api';
 
 type StatCardsProps = {
   totalSessions: number;
@@ -55,13 +55,13 @@ function StatCards({
 
 export function Dashboard() {
   const { data: daily, error: dailyError } = useQuery<DailyActivity>('daily-activity');
-  const { data: projects, error: projectsError } = useQuery<ProjectSummaryType>('project-summary');
+  const { data: totals, error: totalsError } = useQuery<OverallTotals>('overall-totals');
 
   // 取得失敗時に統計カードが 0 件として読まれないようにする
-  const statsError = projectsError ?? dailyError;
-  const totalSessions = projects.reduce((sum, p) => sum + p.total_sessions, 0);
-  const totalMessages = projects.reduce((sum, p) => sum + p.total_user_messages, 0);
-  const totalTools = projects.reduce((sum, p) => sum + p.total_tool_uses, 0);
+  const statsError = totalsError ?? dailyError;
+  const totalSessions = totals[0]?.total_sessions ?? 0;
+  const totalMessages = totals[0]?.total_user_messages ?? 0;
+  const totalTools = totals[0]?.total_tool_uses ?? 0;
   const todayData = daily.length > 0 ? daily[0] : null;
 
   return (
@@ -85,7 +85,7 @@ export function Dashboard() {
           totalMessages={totalMessages}
           totalTools={totalTools}
           todayData={todayData}
-          totalsError={projectsError}
+          totalsError={totalsError}
           todayError={dailyError}
         />
 

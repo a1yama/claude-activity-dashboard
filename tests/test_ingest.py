@@ -213,6 +213,65 @@ class TestExtractCommandName:
         assert extract_command_name([{"type": "text", "text": "hi"}]) == ""
 
 
+class TestUpdateActiveMinutes:
+    def _insert(self, conn, session_id, minutes_offsets, is_subagent=0):
+        conn.execute(
+            "INSERT OR IGNORE INTO sessions (session_id, project_dir, project_name)"
+            " VALUES (?, 'd', 'p')",
+            (session_id,),
+        )
+        conn.executemany(
+            """INSERT INTO messages
+               (uuid, session_id, type, timestamp, timestamp_jst, date_jst, hour_jst, is_subagent)
+               VALUES (?, ?, 'user', ?, '', '2026-03-01', 0, ?)""",
+            [
+                (
+                    f"{session_id}-{i}-{is_subagent}",
+                    session_id,
+                    f"2026-03-01T{offset // 60:02d}:{offset % 60:02d}:00+09:00",
+                    is_subagent,
+                )
+                for i, offset in enumerate(minutes_offsets)
+            ],
+        )
+
+    def test_idle_gaps_are_excluded(self, tmp_path):
+        from ingest import init_db, update_active_minutes
+        conn = init_db(tmp_path / "t.db")
+        # 0分→5分（作業）、5分→245分（4時間の放置）、245分→250分（作業）
+        self._insert(conn, "s1", [0, 5, 245, 250])
+        update_active_minutes(conn)
+        assert conn.execute(
+            "SELECT active_minutes FROM sessions WHERE session_id = 's1'"
+        ).fetchone()[0] == 10
+        conn.close()
+
+    def test_threshold_is_configurable(self, tmp_path):
+        from ingest import init_db, update_active_minutes
+        conn = init_db(tmp_path / "t.db")
+        self._insert(conn, "s1", [0, 20])
+        update_active_minutes(conn, gap_limit=30)
+        assert conn.execute("SELECT active_minutes FROM sessions").fetchone()[0] == 20
+        conn.close()
+
+    def test_subagent_messages_do_not_add_time(self, tmp_path):
+        from ingest import init_db, update_active_minutes
+        conn = init_db(tmp_path / "t.db")
+        self._insert(conn, "s1", [0, 5])
+        self._insert(conn, "s1", [0, 5, 10], is_subagent=1)
+        update_active_minutes(conn)
+        assert conn.execute("SELECT active_minutes FROM sessions").fetchone()[0] == 5
+        conn.close()
+
+    def test_single_message_session(self, tmp_path):
+        from ingest import init_db, update_active_minutes
+        conn = init_db(tmp_path / "t.db")
+        self._insert(conn, "s1", [0])
+        update_active_minutes(conn)
+        assert conn.execute("SELECT active_minutes FROM sessions").fetchone()[0] == 0
+        conn.close()
+
+
 class TestResolveProjectPath:
     def test_hyphenated_repository_name(self):
         from ingest import resolve_project_path

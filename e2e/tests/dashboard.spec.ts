@@ -25,11 +25,19 @@ test.describe("ダッシュボードページ", () => {
   });
 
   test("統計カードに正しい値が表示される", async ({ page }) => {
-    // 2 sessions total (session1: 2 user msgs, session2: 1 user msg → total 3)
-    // tool_use_count: session1=4, session2=2 → total 6
-    await expect(page.getByText("2").first()).toBeVisible(); // 総セッション数
-    await expect(page.getByText("3").first()).toBeVisible(); // 総メッセージ数 (user messages)
-    await expect(page.getByText("6").first()).toBeVisible(); // 総ツール使用数
+    // 3 sessions (user msgs: 2+1+2=5, tool uses: 4+2+1=7)
+    await expect(page.getByText("3").first()).toBeVisible(); // 総セッション数
+    await expect(page.getByText("5").first()).toBeVisible(); // 総メッセージ数 (user messages)
+    await expect(page.getByText("7").first()).toBeVisible(); // 総ツール使用数
+  });
+
+  test("プロジェクト別サマリーに直近30日の作業時間が出る", async ({ page }) => {
+    // 実時間は3時間20分だが、放置を除いた作業時間は20分 = 0.3h
+    const row = page.locator("tr", {
+      hasText: "ghq/github.com/test/recent-project",
+    }).first();
+    await expect(row.getByText("0.3h")).toBeVisible();
+    await expect(row.getByText("2.0")).toBeVisible(); // エラー/セッション
   });
 
   test("最近のセッションテーブルにセッションが表示される", async ({

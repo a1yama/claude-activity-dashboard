@@ -22,19 +22,44 @@ databases:
           WHERE is_subagent = 0
           GROUP BY date_jst
           ORDER BY date_jst DESC
-      project-summary:
-        title: プロジェクト別サマリー
+      overall-totals:
+        title: 全期間の合計
         sql: |
           SELECT
-            project_name,
             COUNT(*) AS total_sessions,
             SUM(user_message_count) AS total_user_messages,
-            SUM(tool_use_count) AS total_tool_uses,
-            MIN(first_message_at) AS first_used,
-            MAX(last_message_at) AS last_used
+            SUM(tool_use_count) AS total_tool_uses
           FROM sessions
-          GROUP BY project_name
-          ORDER BY last_used DESC
+      project-summary:
+        title: プロジェクト別サマリー（直近30日）
+        sql: |
+          -- 累計は古いプロジェクトほど大きくなるだけで行動につながらないため直近30日で見る。
+          -- 対象は「直近30日に最終更新のあったセッション」で、集計はそのセッション全体。
+          -- active_minutes は ingest.py が計算した作業時間（放置を除いた時間）。
+          WITH recent AS (
+            SELECT * FROM sessions
+            WHERE last_message_at >= datetime('now', '-30 days')
+          ),
+          totals AS (
+            SELECT
+              m.session_id,
+              SUM(m.input_tokens + m.cache_creation_tokens + m.cache_read_tokens + m.output_tokens) AS tokens,
+              SUM(m.error_count) AS errors
+            FROM messages m
+            JOIN recent r ON r.session_id = m.session_id
+            GROUP BY m.session_id
+          )
+          SELECT
+            r.project_name,
+            COUNT(*) AS sessions,
+            ROUND(SUM(r.active_minutes) / 60.0, 1) AS active_hours,
+            SUM(t.tokens) AS tokens,
+            ROUND(SUM(t.errors) * 1.0 / COUNT(*), 1) AS errors_per_session,
+            MAX(r.last_message_at) AS last_used
+          FROM recent r
+          JOIN totals t ON t.session_id = r.session_id
+          GROUP BY r.project_name
+          ORDER BY active_hours DESC
       hourly-distribution:
         title: 時間帯別メッセージ分布
         sql: |
@@ -182,7 +207,8 @@ databases:
               message_count,
               user_message_count,
               tool_use_count,
-              claude_version
+              claude_version,
+              active_minutes
             FROM sessions
             ORDER BY last_message_at DESC
             LIMIT 50
@@ -192,6 +218,7 @@ databases:
             s.project_name,
             s.started,
             s.ended,
+            s.active_minutes,
             s.message_count,
             s.user_message_count,
             s.tool_use_count,
