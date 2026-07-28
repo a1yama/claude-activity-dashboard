@@ -18,6 +18,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+from ingest import PROPOSALS_EXTRA_COLUMNS  # noqa: E402
+
 DB_PATH = REPO / "data" / "claude_activity.db"
 ANALYZE_PY = REPO / "analyze.py"
 
@@ -44,6 +48,10 @@ def ensure_table(conn: sqlite3.Connection) -> None:
             target_file TEXT DEFAULT ''
         )"""
     )
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(improvement_proposals)")}
+    for name, decl in PROPOSALS_EXTRA_COLUMNS.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE improvement_proposals ADD COLUMN {name} {decl}")
 
 
 def last_generated_at(conn: sqlite3.Connection) -> datetime | None:
@@ -141,12 +149,23 @@ def write_proposals(
     generated_at: str,
     period_days: int = PERIOD_DAYS,
 ) -> None:
-    """最新スナップショットに置き換える(全削除→挿入)。ダッシュボードは常に最新だけ見る。"""
+    """最新スナップショットに置き換える(全削除→挿入)。ダッシュボードは常に最新だけ見る。
+
+    同じ提案が再生成されたときに採否の記録が消えないよう、(category, title) で引き継ぐ。
+    """
+    decided = {
+        (category, title): (status, decided_at)
+        for category, title, status, decided_at in conn.execute(
+            "SELECT category, title, status, decided_at FROM improvement_proposals"
+            " WHERE status != 'open'"
+        )
+    }
     conn.execute("DELETE FROM improvement_proposals")
     conn.executemany(
         """INSERT INTO improvement_proposals
-           (generated_at, period_days, category, title, rationale, suggestion, target_file)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           (generated_at, period_days, category, title, rationale, suggestion, target_file,
+            status, decided_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
                 generated_at,
@@ -156,6 +175,7 @@ def write_proposals(
                 p["rationale"],
                 p["suggestion"],
                 p["target_file"],
+                *decided.get((p["category"], p["title"]), ("open", "")),
             )
             for p in proposals
         ],

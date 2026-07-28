@@ -1,4 +1,4 @@
-.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test test-py test-front test-e2e sync proposals
+.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test test-py test-front test-e2e sync proposals proposals-list proposal-adopt proposal-reject proposal-reopen
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -57,6 +57,19 @@ test-e2e:
 # 系統B: 週次スロットル付きの改善提案生成(claude -p)。毎回呼んでも内部で間引く
 proposals:
 	$(PYTHON) scripts/generate-proposals.py
+
+# 改善候補の採否記録。本番DBは読み取り専用なので Mac 側で記録し make sync で反映する
+proposals-list:
+	@$(PYTHON) scripts/proposal-status.py list
+
+proposal-adopt:
+	@$(PYTHON) scripts/proposal-status.py adopt $(ID)
+
+proposal-reject:
+	@$(PYTHON) scripts/proposal-status.py reject $(ID)
+
+proposal-reopen:
+	@$(PYTHON) scripts/proposal-status.py reopen $(ID)
 
 # 本番サーバへ手動同期: ingest → 提案生成 → WAL checkpoint → scp → datasette restart
 sync: ingest proposals

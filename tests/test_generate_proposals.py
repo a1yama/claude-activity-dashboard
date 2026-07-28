@@ -23,18 +23,7 @@ JST = timezone(timedelta(hours=9))
 
 def make_db() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
-    conn.execute(
-        """CREATE TABLE improvement_proposals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            generated_at TEXT NOT NULL,
-            period_days INTEGER NOT NULL,
-            category TEXT NOT NULL,
-            title TEXT NOT NULL,
-            rationale TEXT NOT NULL,
-            suggestion TEXT NOT NULL,
-            target_file TEXT DEFAULT ''
-        )"""
-    )
+    gp.ensure_table(conn)
     return conn
 
 
@@ -120,6 +109,42 @@ class TestParseProposals:
 
     def test_empty_array(self):
         assert gp.parse_proposals("[]") == []
+
+
+class TestDecisionsSurviveRegeneration:
+    ITEM = {
+        "category": "skill",
+        "title": "T",
+        "rationale": "R",
+        "suggestion": "S",
+        "target_file": "",
+    }
+
+    def _write(self, conn, ts):
+        gp.write_proposals(conn, [self.ITEM], ts)
+
+    def test_status_is_carried_over_for_the_same_proposal(self):
+        conn = make_db()
+        self._write(conn, datetime(2026, 6, 1, tzinfo=JST).isoformat())
+        conn.execute(
+            "UPDATE improvement_proposals SET status = 'adopted', decided_at = '2026-06-02'"
+        )
+        self._write(conn, datetime(2026, 6, 8, tzinfo=JST).isoformat())
+        assert conn.execute(
+            "SELECT status, decided_at FROM improvement_proposals"
+        ).fetchone() == ("adopted", "2026-06-02")
+
+    def test_new_proposal_starts_open(self):
+        conn = make_db()
+        self._write(conn, datetime(2026, 6, 1, tzinfo=JST).isoformat())
+        conn.execute("UPDATE improvement_proposals SET status = 'rejected'")
+        gp.write_proposals(
+            conn, [{**self.ITEM, "title": "別の提案"}],
+            datetime(2026, 6, 8, tzinfo=JST).isoformat(),
+        )
+        assert conn.execute(
+            "SELECT title, status FROM improvement_proposals"
+        ).fetchone() == ("別の提案", "open")
 
 
 class TestWriteAndRead:

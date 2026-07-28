@@ -233,6 +233,26 @@ def create_fixture_db():
     # is_custom_command は本番と同じ分類ロジックで埋める（フィクスチャで手書きしない）
     classify_commands(conn, {"analyze-usage"})
 
+    # 改善候補（未対応と却下済みを1件ずつ）
+    conn.executemany(
+        """INSERT INTO improvement_proposals
+        (generated_at, period_days, category, title, rationale, suggestion,
+         target_file, status, decided_at)
+        VALUES (?, 7, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                "2026-03-02T09:00:00+09:00", "skill", "テスト実行をスキル化する",
+                "同じ手順を繰り返している", "make test を skill に切り出す",
+                ".claude/skills/run-tests/SKILL.md", "open", "",
+            ),
+            (
+                "2026-03-02T09:00:00+09:00", "claude_md", "コミット規約を明記する",
+                "毎回聞かれている", "CLAUDE.md に追記する",
+                "CLAUDE.md", "rejected", "2026-03-02T10:00:00+09:00",
+            ),
+        ],
+    )
+
     conn.commit()
     conn.close()
     print(f"Created fixture DB: {FIXTURE_DB_PATH}")
