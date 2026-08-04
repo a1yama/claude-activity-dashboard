@@ -72,8 +72,10 @@ proposal-reopen:
 	@$(PYTHON) scripts/proposal-status.py reopen $(ID)
 
 # 本番サーバへ手動同期: ingest → 提案生成 → WAL checkpoint → scp → datasette restart
+# 転送は別名で行い mv で差し替える。稼働中の datasette は DB を開いたままなので、
+# 同じ inode を上書きすると転送中の中途半端な内容を読んで malformed になる
 sync: ingest proposals
 	$(PYTHON) -c "import sqlite3; c=sqlite3.connect('$(DB)'); c.execute('PRAGMA wal_checkpoint(TRUNCATE);'); c.close()"
-	scp -q $(DB) $(SERVER):$(SERVER_DB_PATH)
-	ssh $(SERVER) 'cd /srv/apps/claude-dashboard && sudo docker compose restart datasette'
+	scp -q $(DB) $(SERVER):$(SERVER_DB_PATH).new
+	ssh $(SERVER) 'mv $(SERVER_DB_PATH).new $(SERVER_DB_PATH) && cd /srv/apps/claude-dashboard && sudo docker compose restart datasette'
 	@echo "✓ sync done -> https://dashboard.a1yama.com/"
