@@ -16,6 +16,12 @@ LOG="$HOME/.claude/dashboard-sync.log"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
+# data/ は gitignore でクローン直後は存在しない。
+# 無いと mkdir "$LOCK" が常に失敗し、下の「回収 → 再取得も失敗」に落ちて
+# 「stale lock / already running」だけが延々と記録される。実際にこれで2週間
+# 一度も同期されないまま、成功も失敗もログに出ない状態が続いた
+mkdir -p "$(dirname "$LOCK")" 2>/dev/null || true
+
 # mkdir によるアトミックなロック取得。プロセス死亡で残った古いロックは回収する
 acquire_lock() {
   if mkdir "$LOCK" 2>/dev/null; then
@@ -29,15 +35,25 @@ acquire_lock() {
   fi
   log "stale lock detected (pid=${pid:-unknown}); reclaiming"
   rm -rf "$LOCK"
-  mkdir "$LOCK" 2>/dev/null && echo $$ > "$LOCK/pid"
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    # ロックを作れない = 環境が壊れている。実行中との衝突と区別がつく形で残す
+    log "FATAL: cannot create lock at $LOCK (make setup を実行してください)"
+    return 2
+  fi
+  echo $$ > "$LOCK/pid"
 }
 
-if ! acquire_lock; then
-  # 実行中の同期が取り込めない差分を残す可能性があるため、終了後の再実行を予約する
-  touch "$RERUN"
-  log "sync already running; scheduled rerun"
-  exit 0
-fi
+acquire_lock
+case $? in
+  0) ;;
+  2) exit 1 ;;
+  *)
+    # 実行中の同期が取り込めない差分を残す可能性があるため、終了後の再実行を予約する
+    touch "$RERUN"
+    log "sync already running; scheduled rerun"
+    exit 0
+    ;;
+esac
 trap 'rm -rf "$LOCK"' EXIT
 
 while :; do
