@@ -70,8 +70,14 @@ fi
 # 転送は別名で行い mv で差し替える。稼働中の datasette は DB を開いたままなので、
 # 同じ inode を直接上書きすると転送中の中途半端な内容を読んで malformed になる
 scp -q "$DB" "$SERVER:$SERVER_DB.new" || die "本番への転送に失敗しました"
+
+# 差し替えと同時に古い -wal / -shm を捨てる。これらは差し替え前の DB に属する
+# 付属ファイルで、別の DB と組で残ると SQLite が不整合を見る可能性がある
+# (ヘッダの salt が違えば通常は破棄されるが、当てにしない)。
+# 押し戻す DB は転送前に wal_checkpoint(TRUNCATE) 済みで、WAL に未反映の内容は無い。
 # shellcheck disable=SC2029  # SERVER_DB はこちら側の設定。クライアント展開が意図どおり
-ssh "$SERVER" "mv '$SERVER_DB.new' '$SERVER_DB'" || die "本番DBの差し替えに失敗しました"
+ssh "$SERVER" "mv '$SERVER_DB.new' '$SERVER_DB' && rm -f '$SERVER_DB-wal' '$SERVER_DB-shm'" \
+  || die "本番DBの差し替えに失敗しました"
 
 # 押し戻した直後の mtime を控える。次回これと一致していれば他マシンの更新が無いので
 # 150MB の取得を丸ごと省ける。記録に失敗しても取得を挟むだけなので同期は続行する

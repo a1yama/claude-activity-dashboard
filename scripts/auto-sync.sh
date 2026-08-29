@@ -56,10 +56,21 @@ case $? in
 esac
 trap 'rm -rf "$LOCK"' EXIT
 
+# 直前の同期からの最小間隔(分)。0 で無効。
+# 本番DBは 170MB を超えており、SessionEnd のたびに押し戻すと1日で数GBを送ることになる。
+# 「新しい活動があるか」だけの判定では、セッションが終わるたび必ず該当してしまう
+MIN_INTERVAL="${SYNC_MIN_INTERVAL_MIN:-30}"
+case "$MIN_INTERVAL" in
+  ''|*[!0-9]*) MIN_INTERVAL=30 ;;
+esac
+
 while :; do
   rm -f "$RERUN"
 
-  if [ -f "$STATE" ] && \
+  if [ "$MIN_INTERVAL" -gt 0 ] && [ -f "$STATE" ] && \
+     [ -n "$(find "$STATE" -mmin "-$MIN_INTERVAL" -print -quit 2>/dev/null)" ]; then
+    log "synced within ${MIN_INTERVAL}m; skip"
+  elif [ -f "$STATE" ] && \
      [ -z "$(find "$PROJECTS_DIR" -name '*.jsonl' -not -path '*subagents*' -newer "$STATE" -print -quit 2>/dev/null)" ]; then
     log "no new activity; skip"
   else
