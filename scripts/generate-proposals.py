@@ -152,7 +152,14 @@ def write_proposals(
     """最新スナップショットに置き換える(全削除→挿入)。ダッシュボードは常に最新だけ見る。
 
     同じ提案が再生成されたときに採否の記録が消えないよう、(category, title) で引き継ぐ。
+
+    空リストのときは何もしない。LLM の出力形式が崩れて parse_proposals が 0 件を返すと、
+    全削除だけが走って既存の提案と採否の記録が消える。
+    「提案が無い」と「取り出せなかった」を出力から区別できない以上、
+    古い提案を残す側に倒す(消えたものは復元できない)。
     """
+    if not proposals:
+        return
     decided = {
         (category, title): (status, decided_at)
         for category, title, status, decided_at in conn.execute(
@@ -195,8 +202,19 @@ def run_analyze() -> dict:
 
 
 def run_claude(prompt: str) -> str:
-    # headless セッション終了時の auto-sync 再帰を止める
-    env = {**os.environ, "CLAUDE_CODE_DASHBOARD_SKIP_SYNC": "1"}
+    # headless セッション終了時の auto-sync 再帰を止める。
+    #
+    # あわせてユーザー側の対話用フックを黙らせる。プロンプトには transcript の抜粋が
+    # 埋め込まれるため、過去の会話に含まれる「ダメ」「間違い」「80%」といった語が
+    # 前提チェックのシグナルに当たり、「直前の成果物が間違っていた」等の無関係な指示が
+    # 注入される。指示に従って散文が増えると出力が JSON 配列だけでなくなり、
+    # parse_proposals が 0 件を返して既存の提案が消える経路がある。
+    env = {
+        **os.environ,
+        "CLAUDE_CODE_DASHBOARD_SKIP_SYNC": "1",
+        "CLAUDE_PREMISE_CHECK_OFF": "1",
+        "CLAUDE_FRAME_CHECK_OFF": "1",
+    }
     proc = subprocess.run(
         ["claude", "-p", prompt],
         capture_output=True,
@@ -225,6 +243,10 @@ def main() -> int:
         stdout = run_claude(build_prompt(analyze_data))
         proposals = parse_proposals(stdout)
         write_proposals(conn, proposals, now.isoformat())
+        if not proposals:
+            # 黙って素通りさせない。出力形式の崩れはここでしか気づけない
+            print("[generate-proposals] 提案を取り出せませんでした。既存の提案を残します")
+            return 0
         print(f"[generate-proposals] wrote {len(proposals)} proposals")
         return 0
     except Exception as e:  # 同期フロー(scp)を止めないため握りつぶしてログのみ

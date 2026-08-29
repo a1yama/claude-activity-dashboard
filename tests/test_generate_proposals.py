@@ -196,3 +196,58 @@ class TestBuildPrompt:
         prompt = gp.build_prompt(data)
         assert "b2_user_messages" not in prompt
         assert "total_sessions" in prompt
+
+
+class TestEmptyParseDoesNotWipe:
+    """回帰: パース失敗で既存の提案と採否の記録が消える経路を塞ぐ。
+
+    対話用フックが headless の提案生成にも注入され、出力に散文が混ざると
+    parse_proposals が 0 件を返す。以前はそのまま全削除だけが走っていた。
+    """
+
+    def test_existing_proposals_survive_an_empty_result(self):
+        conn = make_db()
+        gp.write_proposals(
+            conn,
+            [{"category": "skill", "title": "既存", "rationale": "r",
+              "suggestion": "s", "target_file": ""}],
+            "2026-08-25",
+        )
+        gp.write_proposals(conn, [], "2026-08-30")
+        assert conn.execute("SELECT COUNT(*) FROM improvement_proposals").fetchone()[0] == 1
+
+    def test_adoption_record_survives(self):
+        conn = make_db()
+        gp.write_proposals(
+            conn,
+            [{"category": "skill", "title": "既存", "rationale": "r",
+              "suggestion": "s", "target_file": ""}],
+            "2026-08-25",
+        )
+        conn.execute("UPDATE improvement_proposals SET status='adopted', decided_at='2026-08-26'")
+        gp.write_proposals(conn, [], "2026-08-30")
+        assert conn.execute(
+            "SELECT status, decided_at FROM improvement_proposals"
+        ).fetchone() == ("adopted", "2026-08-26")
+
+    def test_prose_before_the_array_yields_nothing(self):
+        # フックが注入する前提節を模した出力。角括弧が JSON より前に出ると取り出せない
+        stdout = '⚖️ **前提**\n- 目的: [提案の生成]\n[{"category":"skill","title":"t","suggestion":"s"}]'
+        assert gp.parse_proposals(stdout) == []
+
+    def test_normal_output_still_replaces(self):
+        conn = make_db()
+        gp.write_proposals(
+            conn,
+            [{"category": "skill", "title": "旧", "rationale": "r",
+              "suggestion": "s", "target_file": ""}],
+            "2026-08-25",
+        )
+        gp.write_proposals(
+            conn,
+            [{"category": "hook", "title": "新", "rationale": "r",
+              "suggestion": "s", "target_file": ""}],
+            "2026-08-30",
+        )
+        rows = conn.execute("SELECT title FROM improvement_proposals").fetchall()
+        assert rows == [("新",)]
