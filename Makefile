@@ -1,4 +1,4 @@
-.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test test-py test-front test-e2e sync proposals proposals-list proposal-adopt proposal-reject proposal-reopen
+.PHONY: setup ingest serve serve-only dev dev-api dev-frontend build test test-py test-front test-e2e sync merge-remote proposals proposals-list proposal-adopt proposal-reject proposal-reopen
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -8,7 +8,10 @@ DB := data/claude_activity.db
 SERVER := a1yama-pj
 SERVER_DB_PATH := /srv/apps/claude-dashboard/data/claude_activity.db
 
+# data/ は gitignore なのでクローン直後は存在しない。
+# 無いまま auto-sync.sh が走るとロックを作れず、失敗と見分けのつかないログだけが出続ける
 setup:
+	mkdir -p data
 	python3 -m venv $(VENV)
 	$(PIP) install -e .
 	cd frontend && npm install
@@ -71,9 +74,15 @@ proposal-reject:
 proposal-reopen:
 	@$(PYTHON) scripts/proposal-status.py reopen $(ID)
 
-# 本番サーバへ手動同期: ingest → 提案生成 → WAL checkpoint → scp → datasette restart
-sync: ingest proposals
-	$(PYTHON) -c "import sqlite3; c=sqlite3.connect('$(DB)'); c.execute('PRAGMA wal_checkpoint(TRUNCATE);'); c.close()"
-	scp -q $(DB) $(SERVER):$(SERVER_DB_PATH)
-	ssh $(SERVER) 'cd /srv/apps/claude-dashboard && sudo docker compose restart datasette'
-	@echo "✓ sync done -> https://dashboard.a1yama.com/"
+# 本番サーバへ同期: ingest → (本番を取得して併合) → 提案生成 → checkpoint → scp → restart
+# 併合を挟むのは、複数の Mac から同期しても互いのセッションを消さないため。
+# 手順の本体は scripts/sync-remote.sh(サーバ側ロックで区間全体を排他する)
+sync: ingest
+	SYNC_PYTHON=$(abspath $(PYTHON)) SYNC_SERVER=$(SERVER) SYNC_SERVER_DB=$(SERVER_DB_PATH) \
+		scripts/sync-remote.sh
+
+# 本番を取得してローカルへ併合するだけ(押し戻さない)。同期前の確認用
+merge-remote:
+	scp -q $(SERVER):$(SERVER_DB_PATH) data/.remote.db
+	$(PYTHON) scripts/db_merge.py data/.remote.db $(DB)
+	rm -f data/.remote.db
